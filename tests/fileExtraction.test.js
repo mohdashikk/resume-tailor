@@ -7,6 +7,13 @@ vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({
   default: `file:///${process.cwd().replace(/\\/g, '/')}/node_modules/pdfjs-dist/build/pdf.worker.min.mjs`,
 }));
 
+vi.mock('tesseract.js', () => ({
+  createWorker: async () => ({
+    recognize: async () => ({ data: { text: 'Asha Rao\nProduct Designer\nCreated accessible mobile and web interfaces.' } }),
+    terminate: async () => {},
+  }),
+}));
+
 const fileLike = (name, bytes) => ({ name, size: bytes.byteLength, arrayBuffer: async () => bytes });
 
 describe('browser document extraction', () => {
@@ -36,4 +43,17 @@ describe('browser document extraction', () => {
     expect(result.text).toContain('Asha Rao');
     expect(result.text).toContain('accessible design systems');
   }, 15000);
+
+  it('accepts plain-text resumes', async () => {
+    const bytes = new TextEncoder().encode('Asha Rao\nProduct Designer\nCreated accessible product experiences.').buffer;
+    const result = await extractResumeText(fileLike('resume.txt', bytes));
+    expect(result.text).toContain('Product Designer');
+  });
+
+  it('uses OCR for image resumes', async () => {
+    const bytes = new Uint8Array([137, 80, 78, 71]).buffer;
+    const result = await extractResumeText(fileLike('resume.png', bytes));
+    expect(result.text).toContain('accessible mobile and web interfaces');
+    expect(result.warnings.join(' ')).toContain('OCR');
+  });
 });

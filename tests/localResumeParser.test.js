@@ -9,4 +9,11 @@ describe('conservative fallback parsing', () => {
     expect(result.contact.email).toBe('mail4ashh@gmail.com');
     expect(result.summary).toContain('UI/UX Designer');
   });
+
+  it('preserves a selected freelance projects heading', () => {
+    const result = parseResumeLocally('Asha Rao\nDesigner\nSELECTED FREELANCE PROJECTS\nOrbit: Designed a responsive dashboard.\nEDUCATION\nBA');
+    expect(result.projectSectionTitle).toBe('Selected Freelance Projects');
+    expect(result.projects[0].name).toBe('Orbit');
+    expect(result.projects[0].bullets[0].text).toBe('Designed a responsive dashboard.');
+  });
 });

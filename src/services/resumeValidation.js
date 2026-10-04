@@ -22,6 +22,7 @@ const skillGroupSchema = z.object({ id: z.string(), name: shortText, skills: z.a
 
 export const resumeSchema = z.object({
   id: z.string(), name: shortText, title: shortText,
+  projectSectionTitle: shortText,
   contact: z.object({ email: shortText, phone: shortText, location: shortText }),
   links: z.array(linkSchema).max(20).default([]), summary: text,
   skillGroups: z.array(skillGroupSchema).max(20).default([]),
@@ -40,7 +41,7 @@ export const tailoredResultSchema = z.object({
 
 export const blankResume = () => ({
   id: crypto.randomUUID(), name: '', title: '', contact: { email: '', phone: '', location: '' },
-  links: [], summary: '', skillGroups: [], experience: [], projects: [], education: [], certifications: [], ambiguities: [],
+  links: [], summary: '', projectSectionTitle: 'Projects', skillGroups: [], experience: [], projects: [], education: [], certifications: [], ambiguities: [],
 });
 
 export function normalizeResume(candidate) {

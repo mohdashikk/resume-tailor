@@ -1,0 +1,25 @@
+.panel { margin: 20px 0 32px; padding: 22px; border: 1px solid #dcd3e4; border-radius: 16px; background: #fff; }
+.heading { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
+.heading h3 { margin: 4px 0; color: #30223e; font-family: Georgia, serif; font-size: 24px; font-weight: 500; }
+.heading p { margin: 0; color: #716878; font-size: 13px; }
+.eyebrow { color: #7552a9; font-size: 10px; font-weight: 800; letter-spacing: 1.3px; text-transform: uppercase; }
+.count { padding: 6px 10px; border-radius: 99px; color: #60418c; background: #f0eafa; font-size: 12px; font-weight: 750; white-space: nowrap; }
+.jdBox { margin-top: 18px; padding: 15px; border: 1px solid #d9cbe9; border-radius: 11px; background: #f8f4fc; }
+.jdBox strong { color: #4f3375; font-size: 13px; }
+.jdBox p { margin: 5px 0 10px; color: #6f6477; font-size: 12px; line-height: 1.45; }
+.terms { display: flex; flex-wrap: wrap; gap: 6px; }
+.terms span, .changeHead span { padding: 4px 7px; border-radius: 99px; color: #4c3570; background: #e9ddf7; font-size: 10px; font-weight: 700; }
+.terms em { color: #807587; font-size: 12px; }
+.changeList { display: grid; gap: 10px; margin-top: 16px; }
+.change { border: 1px solid #e4dee8; border-radius: 11px; overflow: hidden; }
+.changeHead { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #e9e3ec; background: #fbfafc; color: #493b53; font-size: 12px; }
+.changeHead > div { display: flex; flex-wrap: wrap; gap: 5px; justify-content: flex-end; }
+.columns { display: grid; grid-template-columns: 1fr 1fr; }
+.columns > div { padding: 12px; min-width: 0; }
+.columns > div:first-child { border-right: 1px solid #e8e2eb; }
+.columns small { color: #8b818f; font-size: 10px; font-weight: 800; letter-spacing: .9px; text-transform: uppercase; }
+.columns p { margin: 5px 0 0; color: #5f5765; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.columns .after { background: #f9f6fc; }
+.columns .after p { color: #382847; }
+.empty { margin: 4px 0 0; color: #766c7d; font-size: 13px; }
+@media (max-width: 700px) { .panel { padding: 15px; } .heading { align-items: flex-start; } .columns { grid-template-columns: 1fr; } .columns > div:first-child { border-right: 0; border-bottom: 1px solid #e8e2eb; } .changeHead { flex-direction: column; } .changeHead > div { justify-content: flex-start; } }

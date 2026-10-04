@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import ResumeEditor from './components/ResumeEditor';
 import ResumePreview from './components/ResumePreview';
+import ChangeAudit from './components/ChangeAudit';
 import { resumeActions } from './features/resume/resumeSlice';
 import { jobActions } from './features/jobDescription/jobSlice';
 import { tailoringActions } from './features/tailoring/tailoringSlice';
@@ -36,7 +37,7 @@ export default function App({ recovered = false }) {
     } catch (error) {
       const fallback = parseResumeLocally(text);
       dispatch(resumeActions.setWorkingResume(fallback));
-      dispatch(resumeActions.setUploadStatus({ status: 'fallback', progress: 100, message: '', error: error.code === 'AI_NOT_CONFIGURED' ? 'AI is not configured. Basic on-device parsing was used; review and structure the result manually. Add OPENAI_API_KEY on the server for semantic parsing and tailoring.' : `${error.message} Basic on-device parsing was used instead; your previous saved master was not changed.` }));
+      dispatch(resumeActions.setUploadStatus({ status: 'fallback', progress: 100, message: '', error: error.code === 'AI_NOT_CONFIGURED' ? 'AI is not configured. Basic on-device parsing was used; review and structure the result manually. Add GROQ_API_KEY on the server for semantic parsing and tailoring.' : `${error.message} Basic on-device parsing was used instead; your previous saved master was not changed.` }));
     }
     dispatch(resumeActions.setExtractedText(text)); dispatch(resumeActions.setSourceName(sourceName));
   };
@@ -45,7 +46,7 @@ export default function App({ recovered = false }) {
     if (!file) return;
     dispatch(resumeActions.setUploadStatus({ status: 'extracting', progress: 5, message: 'Reading file…', error: '' }));
     try {
-      const extracted = await extractResumeText(file, ({ stage: next, percent }) => dispatch(resumeActions.setUploadStatus({ status: next, progress: percent, message: 'Extracting selectable text…', error: '' })));
+      const extracted = await extractResumeText(file, ({ stage: next, percent }) => dispatch(resumeActions.setUploadStatus({ status: next, progress: percent, message: next === 'ocr' ? 'Reading scanned resume with OCR…' : 'Extracting resume text…', error: '' })));
       await parseText(extracted.text, file.name);
       if (extracted.warnings.length) setNotice(extracted.warnings.join(' '));
     } catch (error) {
@@ -77,6 +78,13 @@ export default function App({ recovered = false }) {
     setNotice('Tailored version saved locally.');
   };
 
+  const addMissingRequirement = (requirement) => {
+    const skill = window.prompt('Confirm that you have this skill, then edit the wording if needed before adding it to the resume:', requirement);
+    if (!skill?.trim()) return;
+    dispatch(tailoringActions.confirmMissingRequirement({ requirement, skill: skill.trim() }));
+    setNotice(`Added “${skill.trim()}” to the tailored resume skills. Your master resume was not changed.`);
+  };
+
   const stateForBackup = useSelector((state) => ({ masterResume: state.resume.masterResume, workingResume: state.resume.workingResume, sourceName: state.resume.sourceName, job: state.job, current: state.tailoring.current, versions: state.tailoring.versions }));
   const restoreBackup = async (file) => {
     try { const data = await importBackup(file); dispatch(resumeActions.hydrateResume({ masterResume: data.masterResume, workingResume: data.workingResume, sourceName: data.sourceName })); dispatch(jobActions.hydrateJob(data.job || {})); dispatch(tailoringActions.hydrateTailoring({ current: data.current, versions: data.versions })); setNotice('Backup imported.'); }
@@ -95,7 +103,7 @@ export default function App({ recovered = false }) {
 
       {stage === 1 && <section className={styles.stage}>
         <div className={styles.stageIntro}><div><span className={styles.stageNumber}>01</span><h2>Build your trusted base</h2><p>Upload a PDF or DOCX, then correct the structured fields before locking in your master resume.</p></div>{resume.sourceName && <span className={styles.filePill}>● {resume.sourceName}</span>}</div>
-        <div className={styles.uploadBox} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}><div className={styles.uploadIcon}>↥</div><h3>Drop your resume here</h3><p>PDF or DOCX · up to 10 MB · text is extracted in your browser</p><button className={styles.secondary} onClick={() => fileRef.current?.click()}>Choose file</button><input hidden ref={fileRef} type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(e) => handleFile(e.target.files[0])} /></div>
+        <div className={styles.uploadBox} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}><div className={styles.uploadIcon}>↥</div><h3>Drop your resume here</h3><p>PDF, scanned PDF, DOCX, TXT, PNG, JPG or WebP · up to 10 MB</p><button className={styles.secondary} onClick={() => fileRef.current?.click()}>Choose file</button><input hidden ref={fileRef} type="file" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/png,image/jpeg,image/webp" onChange={(e) => handleFile(e.target.files[0])} /></div>
         {(resume.upload.status !== 'idle') && <div className={styles.progressWrap}><div className={styles.progressLabel}><span>{resume.upload.message || (resume.upload.status === 'error' ? 'Could not process file' : 'Ready to review')}</span><strong>{resume.upload.progress}%</strong></div><div className={styles.progress}><span style={{ width: `${resume.upload.progress}%` }} /></div>{resume.upload.error && <Status type="error">{resume.upload.error} {resume.extractedText && <button className={styles.inlineButton} onClick={() => parseText(resume.extractedText, resume.sourceName)}>Retry AI parsing</button>}</Status>}</div>}
         <details className={styles.pasteFallback}><summary>Paste resume text instead</summary><textarea rows="8" value={resume.extractedText} onChange={(e) => dispatch(resumeActions.setExtractedText(e.target.value))} placeholder="Paste all resume text here…" /><button className={styles.secondary} disabled={resume.extractedText.trim().length < 40} onClick={() => parseText(resume.extractedText)}>Parse pasted text</button></details>
         {resume.workingResume && <><div className={styles.editorToolbar}><div><h3>Review extracted content</h3><p>Nothing is final until you save the master resume.</p></div>{viewToggle}</div><div className={`${styles.workspace} ${styles[mobileView]}`}><div className={styles.editorPane}><ResumeEditor resume={resume.workingResume} onChange={(value) => dispatch(resumeActions.setWorkingResume(value))} />{resume.workingResume.ambiguities.length > 0 && <Status type="warning"><strong>Review needed:</strong> {resume.workingResume.ambiguities.join(' ')}</Status>}<button className={styles.primary} onClick={saveMaster}>Save as master resume →</button></div><div className={styles.previewPane}><div className={styles.previewLabel}>Live A4 preview</div><ResumePreview resume={resume.workingResume} /></div></div></>}
@@ -110,10 +118,10 @@ export default function App({ recovered = false }) {
 
       {stage === 3 && tailoring.current && <section className={styles.stage}>
         <div className={styles.stageIntro}><div><span className={styles.stageNumber}>03</span><h2>Review, refine, apply</h2><p>Every generated line remains editable. Compare it with the source before exporting.</p></div><div className={styles.reviewActions}><button className={styles.secondary} onClick={() => setStage(2)}>← Edit JD</button><button className={styles.secondary} onClick={generate}>Regenerate</button><button className={styles.secondary} onClick={saveVersion}>Save version</button><button className={styles.primary} onClick={() => downloadResumePdf(tailoring.current.resume, `${job.company || 'tailored'}-${job.jobTitle || 'resume'}.pdf`)}>Download PDF ↓</button></div></div>
-        <div className={styles.insights}><div><h3>What changed</h3><ul>{tailoring.current.changeSummary.map((item) => <li key={item}>{item}</li>)}</ul></div><div><h3>Missing requirements</h3>{tailoring.current.missingRequirements.length ? <ul>{tailoring.current.missingRequirements.map((item) => <li key={item}>{item}</li>)}</ul> : <p>No explicit missing requirements were flagged.</p>}</div><div><h3>Match snapshot</h3><p><strong>{match.coverage}%</strong> JD keyword coverage</p><p>{match.matched.length} matched · {match.missing.length} missing/different</p></div></div>
-        <details className={styles.comparison}><summary>Compare original master with tailored version</summary><div><div><h4>Master summary</h4><p>{resume.masterResume?.summary || 'No master summary.'}</p></div><div><h4>Tailored summary</h4><p>{tailoring.current.resume.summary || 'No tailored summary.'}</p></div></div></details>
+        <div className={styles.insights}><div><h3>What changed</h3><ul>{tailoring.current.changeSummary.map((item) => <li key={item}>{item}</li>)}</ul></div><div><h3>Missing requirements</h3>{tailoring.current.missingRequirements.length ? <><p className={styles.requirementHelp}>Only confirm requirements you genuinely have. You can edit the wording before it is added.</p><ul className={styles.requirementList}>{tailoring.current.missingRequirements.map((item, index) => <li key={`${item}-${index}`}><span>{item}</span><button type="button" onClick={() => addMissingRequirement(item)}>I have this · add</button></li>)}</ul></> : <p>No explicit missing requirements were flagged.</p>}</div><div><h3>Match snapshot</h3><p><strong>{match.coverage}%</strong> JD keyword coverage</p><p>{match.matched.length} matched · {match.missing.length} missing/different</p></div></div>
+        <ChangeAudit master={resume.masterResume} tailored={tailoring.current.resume} jdKeywords={match.keywords} />
         <div className={styles.editorToolbar}><div><h3>Edit tailored version</h3><p>Changes here never modify the master.</p></div>{viewToggle}</div><div className={`${styles.workspace} ${styles[mobileView]}`}><div className={styles.editorPane}><ResumeEditor resume={tailoring.current.resume} onChange={(value) => dispatch(tailoringActions.updateTailoredResume(value))} /></div><div className={styles.previewPane}><div className={styles.previewLabel}>Tailored A4 preview</div><ResumePreview resume={tailoring.current.resume} label="Tailored resume preview" /></div></div>
-        {tailoring.versions.length > 0 && <section className={styles.versions}><h3>Saved versions</h3>{tailoring.versions.map((version) => <button key={version.id} onClick={() => dispatch(tailoringActions.loadVersion(version))}><strong>{version.jobTitle || 'Untitled role'} · {version.company || 'Unknown company'}</strong><span>{new Date(version.createdAt).toLocaleString()}</span></button>)}</section>}
+        {tailoring.versions.length > 0 && <section className={styles.versions}><h3>Saved versions</h3>{tailoring.versions.map((version) => <button key={version.id} onClick={() => { dispatch(tailoringActions.loadVersion(version)); dispatch(jobActions.hydrateJob({ company: version.company || '', jobTitle: version.jobTitle || '', text: version.jobDescription || '' })); }}><strong>{version.jobTitle || 'Untitled role'} · {version.company || 'Unknown company'}</strong><span>{new Date(version.createdAt).toLocaleString()}</span></button>)}</section>}
       </section>}
     </main>
     <footer><span>Reum · personal resume workspace</span><span>Your data is stored locally in this browser.</span></footer>

@@ -1,12 +1,14 @@
 import { blankResume, normalizeResume } from './resumeValidation';
+import { extractProjectDescriptions, extractProjectSectionTitle } from './projectRecoveryService';
 
 const SECTION_NAMES = /^(professional\s+summary|summary|profile|skills|core\s+skills|technical\s+skills|experience|professional\s+experience|work\s+experience|employment|projects|selected\s+projects|selected\s+freelance\s+projects|education|certifications?|licenses?)\s*:?$/i;
 
 export function parseResumeLocally(rawText) {
   const prepared = rawText
-    .replace(/\s+(PROFESSIONAL SUMMARY|SUMMARY|PROFILE|CORE SKILLS|TECHNICAL SKILLS|PROFESSIONAL EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT|SELECTED PROJECTS|PROJECTS|EDUCATION|CERTIFICATIONS?|LICENSES?)\s+/gi, '\n$1\n');
+    .replace(/\s+(PROFESSIONAL SUMMARY|SUMMARY|PROFILE|CORE SKILLS|TECHNICAL SKILLS|PROFESSIONAL EXPERIENCE|WORK EXPERIENCE|EMPLOYMENT|SELECTED FREELANCE PROJECTS|FREELANCE PROJECTS|SELECTED PROJECTS|PROJECTS|EDUCATION|CERTIFICATIONS?|LICENSES?)\s+/gi, '\n$1\n');
   const lines = prepared.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const resume = blankResume();
+  resume.projectSectionTitle = extractProjectSectionTitle(rawText);
   const firstLine = lines[0] || '';
   resume.name = (firstLine.length <= 120 ? firstLine : firstLine.split(/\s+/).slice(0, 6).join(' ')).slice(0, 120);
   const possibleTitle = lines[1] || '';
@@ -28,6 +30,10 @@ export function parseResumeLocally(rawText) {
   if (skillsKey) resume.skillGroups = [{ id: crypto.randomUUID(), name: 'Skills', skills: sections[skillsKey].join(',').split(/[,|•]/).map((x) => x.trim()).filter(Boolean) }];
   const certKey = Object.keys(sections).find((key) => /certification|license/.test(key));
   if (certKey) resume.certifications = sections[certKey].map((name) => ({ id: crypto.randomUUID(), name: name.replace(/^[-•]\s*/, ''), issuer: '', date: '' }));
+  resume.projects = extractProjectDescriptions(rawText).map((project) => ({
+    id: crypto.randomUUID(), masterId: undefined, name: project.name, subtitle: '', link: '', startDate: '', endDate: '',
+    bullets: project.description ? [{ id: crypto.randomUUID(), text: project.description }] : [],
+  }));
   resume.ambiguities = ['Basic on-device parsing was used. Review all fields and add structured experience, projects, and education before saving the master resume.'];
   return normalizeResume(resume);
 }
