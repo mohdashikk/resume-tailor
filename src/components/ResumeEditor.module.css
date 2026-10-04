@@ -1,0 +1,17 @@
+.editor { display: grid; gap: 14px; }
+.section { padding: 18px; border: 1px solid #e2dcea; border-radius: 14px; background: #fff; }
+.section h3 { margin: 0 0 14px; font-size: 16px; color: #2c223d; }
+.sectionHead { display: flex; justify-content: space-between; align-items: center; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.field { display: grid; gap: 6px; margin-bottom: 12px; color: #574f61; font-size: 12px; font-weight: 700; }
+.field input, .field textarea, .bullet textarea, .skillRow input { width: 100%; border: 1px solid #cfc7d8; border-radius: 9px; padding: 10px 11px; background: #fff; color: #24202a; font: inherit; font-weight: 400; resize: vertical; }
+.card { position: relative; margin-top: 12px; padding: 14px; border-radius: 11px; background: #f8f6fa; }
+.cardActions { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 10px; }
+.cardActions button, .skillRow button, .bullet button { border: 0; background: transparent; color: #675b73; cursor: pointer; }
+.cardActions button:disabled { opacity: .3; cursor: default; }
+.cardActions .delete { color: #a33d52; }
+.add, .textButton { border: 0; background: transparent; color: #64449c; font: inherit; font-weight: 700; cursor: pointer; }
+.bullets { display: grid; gap: 7px; color: #574f61; font-size: 12px; font-weight: 700; }
+.bullet { display: flex; gap: 5px; }
+.skillRow { display: grid; grid-template-columns: 130px 1fr 30px; gap: 8px; margin-top: 8px; }
+@media (max-width: 620px) { .grid { grid-template-columns: 1fr; } .skillRow { grid-template-columns: 1fr 28px; } .skillRow input:first-child { grid-column: 1 / -1; } }

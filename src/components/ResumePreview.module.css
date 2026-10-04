@@ -1,0 +1,18 @@
+.paper { width: min(100%, 210mm); min-height: 297mm; padding: 17mm; margin: 0 auto; background: #fff; color: #26232d; box-shadow: 0 18px 50px rgba(42, 32, 67, .11); font-family: Arial, Helvetica, sans-serif; font-size: 10.2pt; line-height: 1.42; }
+.header { text-align: center; border-bottom: 1px solid #dcd5e8; padding-bottom: 12px; }
+.header h1 { margin: 0; color: #241b38; font-size: 24pt; letter-spacing: -.5px; }
+.title { margin: 4px 0 7px; color: #604496; font-size: 12pt; font-weight: 700; }
+.contact, .links { margin: 3px 0; font-size: 9pt; overflow-wrap: anywhere; }
+.links a { color: #51357e; text-decoration: underline; }
+.section { margin-top: 16px; break-inside: auto; }
+.section h2 { margin: 0 0 7px; border-bottom: 1px solid #cfc2e5; color: #5f4297; font-size: 9.5pt; letter-spacing: .9px; text-transform: uppercase; }
+.section p { margin: 3px 0; }
+.item { margin-bottom: 10px; break-inside: avoid; }
+.itemHead { display: flex; justify-content: space-between; gap: 12px; }
+.itemHead span { white-space: nowrap; font-size: 9pt; }
+.meta { color: #5e5a64; font-style: italic; }
+.section ul { padding-left: 18px; margin: 4px 0; }
+.section li { margin: 2px 0; }
+.empty { display: grid; min-height: 420px; place-items: center; padding: 30px; border: 1px dashed #cbbdde; border-radius: 18px; color: #756c80; background: #faf8fd; text-align: center; }
+@media (max-width: 700px) { .paper { min-height: 0; padding: 9mm; font-size: 9.5pt; } .itemHead { align-items: flex-start; flex-direction: column; gap: 0; } }
+@media print { .paper { box-shadow: none; } }
