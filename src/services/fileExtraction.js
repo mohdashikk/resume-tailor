@@ -3,6 +3,7 @@ export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const SUPPORTED_EXTENSIONS = ['pdf', 'docx', 'txt', 'png', 'jpg', 'jpeg', 'webp'];
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp']);
 const MAX_OCR_PAGES = 8;
+const MIN_COMPLETE_PDF_PAGE_CHARS = 700;
 
 function pdfItemsToText(items) {
   const lines = []; let current = []; let previousY = null;
@@ -17,6 +18,19 @@ function pdfItemsToText(items) {
   flush(); return lines.join('\n');
 }
 
+export function pdfPageNeedsOcr(text) {
+  return String(text || '').replace(/\s/g, '').length < MIN_COMPLETE_PDF_PAGE_CHARS;
+}
+
+export function cleanOcrText(text) {
+  return String(text || '')
+    .replace(/\bUl(?=\/UX|\s+Designer|\s+design|\s+delivery|\s+layouts?)/g, 'UI')
+    .replace(/React\.Js\b/g, 'React.js')
+    .replace(/\bSaas\b/g, 'SaaS')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim();
+}
+
 async function createOcrReader(onProgress) {
   const { createWorker } = await import('tesseract.js');
   const worker = await createWorker('eng', 1, {
@@ -29,14 +43,14 @@ async function createOcrReader(onProgress) {
   return {
     async recognize(image) {
       const result = await worker.recognize(image);
-      return String(result.data?.text || '').trim();
+      return cleanOcrText(result.data?.text);
     },
     terminate: () => worker.terminate(),
   };
 }
 
 async function renderPdfPage(page) {
-  const viewport = page.getViewport({ scale: 2 });
+  const viewport = page.getViewport({ scale: 3 });
   const canvas = document.createElement('canvas');
   canvas.width = Math.ceil(viewport.width);
   canvas.height = Math.ceil(viewport.height);
@@ -74,11 +88,16 @@ export async function extractResumeText(file, onProgress = () => {}) {
         const page = await document.getPage(pageNumber);
         const content = await page.getTextContent();
         let pageText = pdfItemsToText(content.items);
-        if (pageText.replace(/\s/g, '').length < 30 && pageNumber <= MAX_OCR_PAGES) {
-          ocr ||= await createOcrReader(onProgress);
-          pageText = await ocr.recognize(await renderPdfPage(page));
-          warnings.push(`Page ${pageNumber} was read with OCR because it contained no selectable text.`);
-        } else if (pageText.replace(/\s/g, '').length < 30) {
+        if (pdfPageNeedsOcr(pageText) && pageNumber <= MAX_OCR_PAGES) {
+          try {
+            ocr ||= await createOcrReader(onProgress);
+            const ocrText = await ocr.recognize(await renderPdfPage(page));
+            if (ocrText.replace(/\s/g, '').length >= pageText.replace(/\s/g, '').length) pageText = ocrText;
+            warnings.push(`Page ${pageNumber} had an incomplete text layer and was recovered with OCR.`);
+          } catch (error) {
+            warnings.push(`OCR could not recover page ${pageNumber}: ${error.message}`);
+          }
+        } else if (pdfPageNeedsOcr(pageText)) {
           skippedOcrPages += 1;
         }
         pages.push(pageText);

@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
-import { extractResumeText } from '../src/services/fileExtraction';
+import { cleanOcrText, extractResumeText, pdfPageNeedsOcr } from '../src/services/fileExtraction';
 
 vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({
   default: `file:///${process.cwd().replace(/\\/g, '/')}/node_modules/pdfjs-dist/build/pdf.worker.min.mjs`,
@@ -25,13 +25,22 @@ describe('browser document extraction', () => {
   it('extracts selectable text from a PDF', async () => {
     const pdf = new jsPDF();
     pdf.text('Asha Rao Product Designer asha@example.com', 20, 20);
-    pdf.text('Experience creating accessible design systems for web products.', 20, 30);
+    Array.from({ length: 18 }, (_, index) => pdf.text(`Experience creating accessible design systems for web products and teams ${index + 1}.`, 20, 30 + index * 8));
     const bytes = pdf.output('arraybuffer');
     const result = await extractResumeText(fileLike('resume.pdf', bytes));
     expect(result.text).toContain('Asha Rao');
     expect(result.text).toContain('accessible design systems');
     expect(result.text).toContain('\n');
   }, 15000);
+
+  it('detects a partially broken PDF text layer that needs OCR', () => {
+    expect(pdfPageNeedsOcr('SUMMARY\nEXPERIENCE\nUI/UX Designer\nCompany')).toBe(true);
+    expect(pdfPageNeedsOcr('Complete resume content '.repeat(45))).toBe(false);
+  });
+
+  it('normalizes common resume OCR ambiguities', () => {
+    expect(cleanOcrText('Ul/UX Designer\nSaas products\nReact.Js')).toBe('UI/UX Designer\nSaaS products\nReact.js');
+  });
 
   it('extracts paragraphs from a DOCX', async () => {
     const zip = new JSZip();

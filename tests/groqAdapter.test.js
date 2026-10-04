@@ -35,6 +35,33 @@ describe('Groq AI adapter', () => {
     expect(body.response_format.json_schema.strict).toBe(true);
   });
 
+  it('automatically repairs a Groq schema-generation failure', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ error: {
+          code: 'json_validate_failed',
+          message: "Generated JSON does not match the expected schema: expected object, but got string",
+          failed_generation: JSON.stringify({ ...parsedResume, experience: ['Product Designer at Orbit'] }),
+        } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: JSON.stringify(parsedResume) } }] }),
+      });
+
+    const result = await handleAIRequest(
+      { action: 'parse', payload: { rawText: 'Asha Rao\nProduct Designer\n'.padEnd(80, 'x') } },
+      { GROQ_API_KEY: 'test-key' },
+    );
+
+    expect(result.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const retryBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(retryBody.temperature).toBe(0);
+    expect(retryBody.messages.at(-1).content).toContain('Every element in');
+  });
+
   it('uses only master skills and orders them for the JD', async () => {
     const masterResume = {
       ...parsedResume,

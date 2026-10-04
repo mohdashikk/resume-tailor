@@ -24,25 +24,51 @@ const resumeJsonSchema = {
 async function callGroq({ name, schema, system, input }, env = process.env) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 50_000);
-  try {
+  const request = async (messages, temperature) => {
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST', signal: controller.signal,
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.GROQ_API_KEY}` },
       body: JSON.stringify({
         model: env.GROQ_MODEL || 'openai/gpt-oss-120b',
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: input },
-        ],
-        temperature: 0.2,
+        messages,
+        temperature,
         response_format: { type: 'json_schema', json_schema: { name, strict: true, schema } },
       }),
     });
     const body = await response.json();
-    if (!response.ok) throw new Error(body.error?.message || 'Groq request failed.');
+    if (!response.ok) {
+      const error = new Error(body.error?.message || 'Groq request failed.');
+      error.providerBody = body;
+      throw error;
+    }
     const text = body.choices?.[0]?.message?.content;
     if (!text) throw new Error('Groq returned no structured output.');
-    return JSON.parse(text);
+    try { return JSON.parse(text); }
+    catch (error) { error.failedGeneration = text; throw error; }
+  };
+  try {
+    const messages = [
+      { role: 'system', content: system },
+      { role: 'user', content: input },
+    ];
+    try {
+      return await request(messages, 0.2);
+    } catch (error) {
+      const providerError = error.providerBody?.error || {};
+      const repairable = error instanceof SyntaxError
+        || /schema|json|failed_generation|expected object/i.test(`${providerError.code || ''} ${providerError.message || error.message}`);
+      if (!repairable) throw error;
+      const failedGeneration = String(providerError.failed_generation || error.failedGeneration || '').slice(-16_000);
+      const repairMessages = [
+        ...messages,
+        ...(failedGeneration ? [{ role: 'assistant', content: failedGeneration }] : []),
+        {
+          role: 'user',
+          content: 'Repair the response and try again. Follow the supplied JSON schema exactly. Every element in links, skillGroups, experience, projects, education, and certifications must be a JSON object, never a string. Every element in bullets must be an object with id and text. Use empty strings or empty arrays for unknown values. Return only the valid schema output.',
+        },
+      ];
+      return await request(repairMessages, 0);
+    }
   } finally { clearTimeout(timeout); }
 }
 
