@@ -12,8 +12,8 @@ const resume = {
   skillGroups: [
     { id: 's1', name: 'UX / Product', skills: ['User research', 'User flows', 'Information architecture', 'Wireframing', 'Prototyping', 'Interaction design', 'Usability testing'] },
     { id: 's2', name: 'UI / Systems', skills: ['Figma', 'Components', 'UI kits', 'Visual design', 'Responsive design', 'WCAG accessibility'] },
-    { id: 's3', name: 'Delivery', skills: ['Figma Dev Mode', 'Developer handoff', 'Agile / Scrum', 'Git', 'GitHub'] },
-    { id: 's4', name: 'Front-End', skills: ['HTML5', 'CSS3', 'Sass', 'Tailwind CSS', 'JavaScript', 'React.js', 'Cross-browser compatibility'] },
+    { id: 's3', name: 'Technical (design support)', skills: ['HTML5', 'CSS3', 'Sass', 'Tailwind CSS', 'JavaScript', 'React.js', 'Git', 'GitHub'] },
+    { id: 's4', name: 'Additional relevant skills', skills: ['Figma Dev Mode', 'Developer handoff', 'Agile / Scrum', 'Cross-browser compatibility'] },
   ],
   experience: Array.from({ length: 7 }, (_, index) => ({
     id: `exp-${index}`, role: index ? 'UI/UX Designer' : 'Senior UI/UX Designer', company: `Example Product Company ${index + 1}`,
@@ -38,4 +38,4 @@ const resume = {
 const outputDirectory = new URL('../output/pdf/', import.meta.url);
 await mkdir(outputDirectory, { recursive: true });
 const document = await createResumePdfDocument(resume);
-await writeFile(new URL('reum-resume-export-sample.pdf', outputDirectory), Buffer.from(document.output('arraybuffer')));
+await writeFile(new URL('doitnext-resume-export-sample.pdf', outputDirectory), Buffer.from(document.output('arraybuffer')));

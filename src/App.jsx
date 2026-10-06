@@ -15,7 +15,7 @@ import { downloadResumePdf } from './services/pdfService';
 import { exportBackup, importBackup, STORAGE_KEY } from './services/storageService';
 import styles from './App.module.css';
 
-const stages = ['Upload & Base Resume', 'Job Description & Tailoring', 'Review & Export'];
+const workflowSteps = ['Upload resume', 'Job description', 'Tailor & review', 'Export'];
 
 function Status({ type = 'info', children }) { return children ? <div className={`${styles.status} ${styles[type]}`} role={type === 'error' ? 'alert' : 'status'}>{children}</div> : null; }
 
@@ -93,12 +93,31 @@ export default function App({ recovered = false }) {
   const clearAll = () => { if (!window.confirm('Clear the master resume, job description, and all saved versions from this browser?')) return; localStorage.removeItem(STORAGE_KEY); dispatch(resumeActions.clearResume()); dispatch(jobActions.clearJob()); dispatch(tailoringActions.clearTailoring()); setStage(1); setNotice('Saved data cleared.'); };
 
   const viewToggle = <div className={styles.viewToggle} aria-label="Choose mobile view"><button className={mobileView === 'editor' ? styles.active : ''} onClick={() => setMobileView('editor')}>Editor</button><button className={mobileView === 'preview' ? styles.active : ''} onClick={() => setMobileView('preview')}>Preview</button></div>;
+  const exportTailoredResume = () => tailoring.current && downloadResumePdf(tailoring.current.resume, `${job.company || 'tailored'}-${job.jobTitle || 'resume'}.pdf`);
 
   return <div className={styles.app}>
-    <header className={styles.topbar}><a className={styles.brand} href="#top" aria-label="Reum home"><span>R</span> Reum</a><p>Truthful tailoring for stronger applications</p><div className={styles.dataActions}><button onClick={() => exportBackup(stateForBackup)}>Backup JSON</button><button onClick={() => backupRef.current?.click()}>Import</button><button className={styles.dangerLink} onClick={clearAll}>Clear</button><input ref={backupRef} hidden type="file" accept="application/json,.json" onChange={(e) => restoreBackup(e.target.files[0])} /></div></header>
-    <main id="top">
-      <section className={styles.hero}><div><span className={styles.eyebrow}>AI resume studio</span><h1>Your experience, focused for the role.</h1><p>Import once, keep a trusted master, and tailor without inventing a thing.</p></div><div className={styles.privacy}>Files stay in your browser. Only extracted text is sent to AI when requested.</div></section>
-      <nav className={styles.steps} aria-label="Resume workflow">{stages.map((name, index) => { const number = index + 1; const disabled = number === 2 && !resume.masterResume || number === 3 && !tailoring.current; return <button key={name} disabled={disabled} className={stage === number ? styles.currentStep : stage > number ? styles.doneStep : ''} onClick={() => setStage(number)}><span>{stage > number ? '✓' : number}</span>{name}</button>; })}</nav>
+    <aside className={styles.sidebar}>
+      <a className={styles.brand} href="#top" aria-label="doitnext home"><span className={styles.brandIcon}>▤</span><strong>doitnext</strong></a>
+      <nav className={styles.sideNav} aria-label="Primary navigation">
+        <button className={stage === 1 ? styles.sideActive : ''} onClick={() => setStage(1)}><span>▧</span>Master resume</button>
+        <button className={stage === 2 ? styles.sideActive : ''} disabled={!resume.masterResume} onClick={() => setStage(2)}><span>▣</span>Tailor to job</button>
+        <button className={stage === 3 ? styles.sideActive : ''} disabled={!tailoring.current} onClick={() => setStage(3)}><span>◷</span>Saved versions{tailoring.versions.length > 0 && <em>{tailoring.versions.length}</em>}</button>
+      </nav>
+      <div className={styles.sidebarTools}>
+        <button onClick={() => exportBackup(stateForBackup)}>Backup data</button>
+        <button onClick={() => backupRef.current?.click()}>Import backup</button>
+        <button className={styles.dangerLink} onClick={clearAll}>Clear workspace</button>
+        <input ref={backupRef} hidden type="file" accept="application/json,.json" onChange={(e) => restoreBackup(e.target.files[0])} />
+      </div>
+      <div className={styles.account}><span>A</span><div><strong>My workspace</strong><small>Stored locally</small></div></div>
+    </aside>
+    <div className={styles.appShell}>
+      <header className={styles.topbar}>
+        <div><h1>Tailor your resume</h1><p>Match your experience to the right opportunity.</p></div>
+        <div className={styles.headerActions}><button className={styles.secondary} disabled={!tailoring.current} onClick={saveVersion}>Save draft</button><button className={styles.primary} disabled={!tailoring.current} onClick={exportTailoredResume}>Export PDF</button></div>
+      </header>
+      <main id="top">
+      <nav className={styles.steps} aria-label="Resume workflow">{workflowSteps.map((name, index) => { const number = index + 1; const active = number === stage || (number === 4 && false); const done = number < stage; const disabled = number === 2 && !resume.masterResume || number === 3 && !tailoring.current || number === 4 && !tailoring.current; return <button key={name} disabled={disabled} className={active ? styles.currentStep : done ? styles.doneStep : ''} onClick={() => number === 4 ? exportTailoredResume() : setStage(number)}><span>{done ? '✓' : number}</span>{name}</button>; })}</nav>
       {notice && <Status>{notice}<button className={styles.dismiss} onClick={() => setNotice('')} aria-label="Dismiss">×</button></Status>}
 
       {stage === 1 && <section className={styles.stage}>
@@ -110,20 +129,28 @@ export default function App({ recovered = false }) {
       </section>}
 
       {stage === 2 && <section className={styles.stage}>
-        <div className={styles.stageIntro}><div><span className={styles.stageNumber}>02</span><h2>Focus on the opportunity</h2><p>Paste the complete job description. Reum compares it with your master before tailoring.</p></div><span className={styles.filePill}>Master saved</span></div>
+        <div className={styles.stageIntro}><div><span className={styles.stageNumber}>02</span><h2>Focus on the opportunity</h2><p>Paste the complete job description. doitnext compares it with your master before tailoring.</p></div><span className={styles.filePill}>Master saved</span></div>
         <div className={styles.jobGrid}><div className={styles.jobForm}><div className={styles.twoCols}><label>Company <input value={job.company} onChange={(e) => dispatch(jobActions.updateJob({ company: e.target.value }))} placeholder="Acme, Inc." /></label><label>Job title <input value={job.jobTitle} onChange={(e) => dispatch(jobActions.updateJob({ jobTitle: e.target.value }))} placeholder="Senior Product Designer" /></label></div><label>Complete job description <textarea rows="18" value={job.text} onChange={(e) => dispatch(jobActions.updateJob({ text: e.target.value }))} placeholder="Paste the full job description…" /></label><p className={styles.charCount}>{job.text.length.toLocaleString()} / 30,000 characters</p></div><aside className={styles.matchCard}><span className={styles.eyebrow}>Live relevance check</span><div className={styles.score}>{match.coverage}<small>%</small></div><h3>JD keyword coverage</h3><p>The share of recurring JD terms found verbatim in your master resume. It is not an ATS score or hiring probability.</p><div className={styles.termGroup}><strong>Matched</strong><div>{match.matched.length ? match.matched.map((term) => <span className={styles.match} key={term}>{term}</span>) : <em>No recurring terms matched yet.</em>}</div></div><div className={styles.termGroup}><strong>Missing or differently worded</strong><div>{match.missing.length ? match.missing.map((term) => <span className={styles.missing} key={term}>{term}</span>) : <em>Paste a JD to compare.</em>}</div></div></aside></div>
         {tailoring.error && <Status type="error">{tailoring.error}</Status>}
         <div className={styles.generateBar}><div><strong>Your master stays untouched.</strong><span>A separate, editable version will be created.</span></div><button className={styles.primary} disabled={tailoring.status === 'loading' || job.text.trim().length < 80} onClick={generate}>{tailoring.status === 'loading' ? <><span className={styles.spinner} /> Tailoring…</> : 'Generate tailored resume ✦'}</button></div>
       </section>}
 
-      {stage === 3 && tailoring.current && <section className={styles.stage}>
-        <div className={styles.stageIntro}><div><span className={styles.stageNumber}>03</span><h2>Review, refine, apply</h2><p>Every generated line remains editable. Compare it with the source before exporting.</p></div><div className={styles.reviewActions}><button className={styles.secondary} onClick={() => setStage(2)}>← Edit JD</button><button className={styles.secondary} onClick={generate}>Regenerate</button><button className={styles.secondary} onClick={saveVersion}>Save version</button><button className={styles.primary} onClick={() => downloadResumePdf(tailoring.current.resume, `${job.company || 'tailored'}-${job.jobTitle || 'resume'}.pdf`)}>Download PDF ↓</button></div></div>
-        <div className={styles.insights}><div><h3>What changed</h3><ul>{tailoring.current.changeSummary.map((item) => <li key={item}>{item}</li>)}</ul></div><div><h3>Missing requirements</h3>{tailoring.current.missingRequirements.length ? <><p className={styles.requirementHelp}>Only confirm requirements you genuinely have. You can edit the wording before it is added.</p><ul className={styles.requirementList}>{tailoring.current.missingRequirements.map((item, index) => <li key={`${item}-${index}`}><span>{item}</span><button type="button" onClick={() => addMissingRequirement(item)}>I have this · add</button></li>)}</ul></> : <p>No explicit missing requirements were flagged.</p>}</div><div><h3>Match snapshot</h3><p><strong>{match.coverage}%</strong> JD keyword coverage</p><p>{match.matched.length} matched · {match.missing.length} missing/different</p></div></div>
-        <ChangeAudit master={resume.masterResume} tailored={tailoring.current.resume} jdKeywords={match.keywords} />
-        <div className={styles.editorToolbar}><div><h3>Edit tailored version</h3><p>Changes here never modify the master.</p></div>{viewToggle}</div><div className={`${styles.workspace} ${styles[mobileView]}`}><div className={styles.editorPane}><ResumeEditor resume={tailoring.current.resume} onChange={(value) => dispatch(tailoringActions.updateTailoredResume(value))} /></div><div className={styles.previewPane}><div className={styles.previewLabel}>Tailored A4 preview</div><ResumePreview resume={tailoring.current.resume} label="Tailored resume preview" /></div></div>
-        {tailoring.versions.length > 0 && <section className={styles.versions}><h3>Saved versions</h3>{tailoring.versions.map((version) => <button key={version.id} onClick={() => { dispatch(tailoringActions.loadVersion(version)); dispatch(jobActions.hydrateJob({ company: version.company || '', jobTitle: version.jobTitle || '', text: version.jobDescription || '' })); }}><strong>{version.jobTitle || 'Untitled role'} · {version.company || 'Unknown company'}</strong><span>{new Date(version.createdAt).toLocaleString()}</span></button>)}</section>}
+      {stage === 3 && tailoring.current && <section className={`${styles.stage} ${styles.reviewStage}`}>
+        <div className={styles.mobileReviewToggle}>{viewToggle}</div>
+        <div className={`${styles.reviewGrid} ${styles[mobileView]}`}>
+          <div className={styles.reviewColumn}>
+            <section className={styles.roleCard}><div className={styles.roleIcon}>▦</div><div><h2>{job.jobTitle || 'Target role'}</h2><p>{job.company || 'Target company'}<span>•</span>Tailored resume workspace</p><small>● Job description added</small></div><button className={styles.textAction} onClick={() => setStage(2)}>✎ Edit</button></section>
+            <div className={styles.metricGrid}><div><span className={styles.metricIcon}>☷</span><p>Matched skills<strong>{match.matched.length} / {Math.max(match.keywords.length, match.matched.length)}</strong></p></div><div><span className={`${styles.metricIcon} ${styles.amber}`}>☆</span><p>Missing terms<strong>{match.missing.length}</strong></p></div><div><span className={`${styles.metricIcon} ${styles.green}`}>▤</span><p>Resume status<strong>Ready</strong></p></div></div>
+            <section className={styles.insightPanel}><div className={styles.panelHeading}><div><h3>Job match insights</h3><p>Review what matches and what still needs attention.</p></div><span>{match.coverage}% match</span></div><div className={styles.matchRows}>{match.matched.slice(0, 5).map((term) => <div key={term}><span className={styles.check}>✓</span><p><strong>{term}</strong><small>Found in your master resume.</small></p><em>In resume</em></div>)}</div>{tailoring.current.missingRequirements.length > 0 && <div className={styles.reviewWarning}>! &nbsp; {tailoring.current.missingRequirements.length} requirements need your review</div>}</section>
+            <div className={styles.insights}><div><h3>What changed</h3><ul>{tailoring.current.changeSummary.map((item) => <li key={item}>{item}</li>)}</ul></div><div><h3>Missing requirements</h3>{tailoring.current.missingRequirements.length ? <><p className={styles.requirementHelp}>Only confirm requirements you genuinely have.</p><ul className={styles.requirementList}>{tailoring.current.missingRequirements.map((item, index) => <li key={`${item}-${index}`}><span>{item}</span><button type="button" onClick={() => addMissingRequirement(item)}>I have this · add</button></li>)}</ul></> : <p>No explicit missing requirements were flagged.</p>}</div></div>
+            <ChangeAudit master={resume.masterResume} tailored={tailoring.current.resume} jdKeywords={match.keywords} />
+            <details className={styles.editorDetails}><summary><span>Edit tailored resume</span><small>Changes here never modify the master.</small></summary><div className={styles.editorPane}><ResumeEditor resume={tailoring.current.resume} onChange={(value) => dispatch(tailoringActions.updateTailoredResume(value))} /></div></details>
+            {tailoring.versions.length > 0 && <section className={styles.versions}><h3>Saved versions</h3>{tailoring.versions.map((version) => <button key={version.id} onClick={() => { dispatch(tailoringActions.loadVersion(version)); dispatch(jobActions.hydrateJob({ company: version.company || '', jobTitle: version.jobTitle || '', text: version.jobDescription || '' })); }}><strong>{version.jobTitle || 'Untitled role'} · {version.company || 'Unknown company'}</strong><span>{new Date(version.createdAt).toLocaleString()}</span></button>)}</section>}
+          </div>
+          <aside className={styles.previewPane}><div className={styles.previewHeader}><div><h3>Live resume preview</h3><span>Master resume stays unchanged.</span></div><div><button>A4⌄</button><button>⌕ 100%⌄</button></div></div><ResumePreview resume={tailoring.current.resume} label="Tailored resume preview" /></aside>
+        </div>
       </section>}
     </main>
-    <footer><span>Reum · personal resume workspace</span><span>Your data is stored locally in this browser.</span></footer>
+    </div>
   </div>;
 }

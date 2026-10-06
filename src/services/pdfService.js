@@ -15,6 +15,17 @@ export function sanitizePdfText(value) {
     .trim();
 }
 
+export function calculateSkillLabelColumnWidth(groups, measureText, usableWidth) {
+  const minimumWidth = 35;
+  const maximumWidth = usableWidth * 0.42;
+  const widestLabel = (groups || []).reduce((width, group) => {
+    const label = sanitizePdfText(group.name || 'Skills').toUpperCase();
+    return Math.max(width, measureText(label));
+  }, 0);
+
+  return Math.min(maximumWidth, Math.max(minimumWidth, widestLabel + 4));
+}
+
 export async function createResumePdfDocument(resume) {
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true, putOnlyUsedFonts: true });
@@ -26,7 +37,7 @@ export async function createResumePdfDocument(resume) {
     title: `${sanitizePdfText(resume.name) || 'Resume'} - Resume`,
     subject: 'ATS-friendly professional resume',
     author: sanitizePdfText(resume.name),
-    creator: 'Reum Resume Tailor',
+    creator: 'doitnext Resume Tailor',
   });
   doc.setLineHeightFactor(1.15);
 
@@ -99,21 +110,32 @@ export async function createResumePdfDocument(resume) {
     });
     y += lineHeight(size) + 0.9;
   };
+  setType(8.2, 'bold', COLOR.violet);
+  const skillLabelWidth = calculateSkillLabelColumnWidth(
+    resume.skillGroups,
+    (text) => doc.getTextWidth(text),
+    usable,
+  );
   const writeSkillGroup = (group) => {
     const label = sanitizePdfText(group.name || 'Skills');
     const value = sanitizePdfText((group.skills || []).join(', '));
     if (!value) return;
-    const labelWidth = 35;
-    const lines = split(value, usable - labelWidth, 8.6, 'normal');
-    const leading = lineHeight(8.6);
-    ensureSpace(Math.max(leading * lines.length, 5) + 1);
-    setType(8.2, 'bold', COLOR.violet);
-    doc.text(label.toUpperCase(), PAGE.left, y);
-    lines.forEach((line, index) => {
-      setType(8.6, 'normal', COLOR.ink);
-      doc.text(line, PAGE.left + labelWidth, y + index * leading);
+    const columnGap = 4;
+    const labelLines = split(label.toUpperCase(), skillLabelWidth - columnGap, 8.2, 'bold');
+    const valueLines = split(value, usable - skillLabelWidth, 8.6, 'normal');
+    const labelLeading = lineHeight(8.2);
+    const valueLeading = lineHeight(8.6);
+    const rowHeight = Math.max(labelLeading * labelLines.length, valueLeading * valueLines.length, 5);
+    ensureSpace(rowHeight + 1.1);
+    labelLines.forEach((line, index) => {
+      setType(8.2, 'bold', COLOR.violet);
+      doc.text(line, PAGE.left, y + index * labelLeading);
     });
-    y += Math.max(leading * lines.length, leading) + 1.1;
+    valueLines.forEach((line, index) => {
+      setType(8.6, 'normal', COLOR.ink);
+      doc.text(line, PAGE.left + skillLabelWidth, y + index * valueLeading);
+    });
+    y += rowHeight + 1.1;
   };
   const writeItemHeader = (left, right = '') => {
     const safeLeft = sanitizePdfText(left);
@@ -159,9 +181,8 @@ export async function createResumePdfDocument(resume) {
     y += 1.2;
   };
 
-  // Header: restrained visual accent, with all important content in the body.
-  doc.setFillColor(...COLOR.violet);
-  doc.roundedRect(PAGE.left, PAGE.top - 1, 1.4, 28, 0.7, 0.7, 'F');
+  // Header: size the accent from the rendered content so it never crosses the divider.
+  const headerAccentTop = PAGE.top - 1;
   y = PAGE.top + 2;
   writeParagraph(resume.name || 'Your name', { x: PAGE.left + 5, width: usable - 5, size: 19.5, style: 'bold', color: COLOR.ink, gap: 0.5 });
   if (resume.title) writeParagraph(resume.title, { x: PAGE.left + 5, width: usable - 5, size: 10.1, style: 'bold', color: COLOR.violet, gap: 1.2 });
@@ -171,8 +192,12 @@ export async function createResumePdfDocument(resume) {
   if (resume.contact?.location) contact.push({ label: resume.contact.location, url: '' });
   writeInlineLinks(contact, 8.1, PAGE.left + 5);
   writeInlineLinks((resume.links || []).filter((link) => link.url).map((link) => ({ label: link.label || link.url, url: link.url })), 8.1, PAGE.left + 5);
+  const headerDividerY = y + 0.5;
+  const headerAccentBottom = headerDividerY - 0.8;
+  doc.setFillColor(...COLOR.violet);
+  doc.roundedRect(PAGE.left, headerAccentTop, 1.4, Math.max(headerAccentBottom - headerAccentTop, 1.4), 0.7, 0.7, 'F');
   doc.setDrawColor(...COLOR.rule);
-  doc.line(PAGE.left, y + 0.5, PAGE.width - PAGE.right, y + 0.5);
+  doc.line(PAGE.left, headerDividerY, PAGE.width - PAGE.right, headerDividerY);
   y += 2;
 
   if (resume.summary) { section('Professional summary'); writeParagraph(resume.summary, { size: 9.15, gap: 0.8 }); }
@@ -199,7 +224,6 @@ export async function createResumePdfDocument(resume) {
     doc.setLineWidth(0.25);
     doc.line(PAGE.left, PAGE.height - 11, PAGE.width - PAGE.right, PAGE.height - 11);
     setType(7.2, 'normal', COLOR.muted);
-    doc.text('Reum resume', PAGE.left, PAGE.height - 7.5);
     doc.text(`Page ${page} of ${pages}`, PAGE.width - PAGE.right, PAGE.height - 7.5, { align: 'right' });
   }
   doc.setPage(1);

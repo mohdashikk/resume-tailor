@@ -32,7 +32,31 @@ describe('Groq AI adapter', () => {
     const body = JSON.parse(request.body);
     expect(url).toBe('https://api.groq.com/openai/v1/chat/completions');
     expect(body.model).toBe('openai/gpt-oss-20b');
+    expect(body.reasoning_effort).toBe('low');
     expect(body.response_format.json_schema.strict).toBe(true);
+  });
+
+  it('waits for Groq rate limits and retries once', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        headers: { get: (name) => name === 'retry-after' ? '0' : null },
+        json: async () => ({ error: { message: 'Rate limit reached. Please try again in 0s.' } }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ choices: [{ message: { content: JSON.stringify(parsedResume) } }] }),
+      });
+
+    const result = await handleAIRequest(
+      { action: 'parse', payload: { rawText: 'Asha Rao\nProduct Designer\n'.padEnd(80, 'x') } },
+      { GROQ_API_KEY: 'test-key' },
+    );
+
+    expect(result.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('automatically repairs a Groq schema-generation failure', async () => {

@@ -15,4 +15,17 @@ describe('storage recovery', () => {
     const storage = { getItem: () => JSON.stringify({ masterResume: { id: 4 } }), setItem: () => {}, removeItem: () => {} };
     expect(loadSavedState(storage).recovered).toBe(true);
   });
+
+  it('migrates saved data from the previous app name', () => {
+    const legacyKey = 'reum-tailor:v1';
+    const values = new Map([[legacyKey, JSON.stringify({ job: { company: 'Example' }, versions: [] })]]);
+    const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+
+    const result = loadSavedState(storage);
+
+    expect(result.recovered).toBe(false);
+    expect(result.data.job.company).toBe('Example');
+    expect(values.has(STORAGE_KEY)).toBe(true);
+    expect(values.has(legacyKey)).toBe(false);
+  });
 });

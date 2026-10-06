@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createResumePdfDocument, sanitizePdfText } from '../src/services/pdfService';
+import { calculateSkillLabelColumnWidth, createResumePdfDocument, sanitizePdfText } from '../src/services/pdfService';
 
 const longResume = {
   id: 'resume-1', name: 'Alex Morgan', title: 'UI/UX Designer | Product Design | Front-End UI',
@@ -26,6 +26,18 @@ const longResume = {
 describe('PDF resume export', () => {
   it('normalizes typography unsupported by standard PDF fonts', () => {
     expect(sanitizePdfText('Designer — Product “Systems”')).toBe('Designer - Product "Systems"');
+  });
+
+  it('expands the skill label column for long group names without consuming the whole row', () => {
+    const groups = [
+      { name: 'Design' },
+      { name: 'Technical (design support)' },
+      { name: 'Additional relevant skills' },
+    ];
+    const width = calculateSkillLabelColumnWidth(groups, (text) => text.length * 1.8, 176);
+
+    expect(width).toBeGreaterThan(35);
+    expect(width).toBeLessThanOrEqual(176 * 0.42);
   });
 
   it('creates a readable multi-page document without dropping final sections', async () => {

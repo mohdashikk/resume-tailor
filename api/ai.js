@@ -4,6 +4,24 @@ import { didSkillOrderChange, prioritizeSkillsForJob } from '../src/services/ski
 
 const MAX_RAW_TEXT = 60_000;
 const MAX_JD_TEXT = 30_000;
+const MAX_RATE_LIMIT_RETRIES = 1;
+const MAX_RATE_LIMIT_WAIT_MS = 20_000;
+
+const wait = (milliseconds, signal) => new Promise((resolve, reject) => {
+  const timeout = setTimeout(resolve, milliseconds);
+  signal?.addEventListener('abort', () => {
+    clearTimeout(timeout);
+    reject(new DOMException('The request was aborted.', 'AbortError'));
+  }, { once: true });
+});
+
+function rateLimitWaitMs(response, body) {
+  const headerSeconds = Number.parseFloat(response.headers?.get?.('retry-after') || '');
+  if (Number.isFinite(headerSeconds)) return Math.max(0, headerSeconds * 1000);
+  const message = String(body?.error?.message || '');
+  const messageSeconds = Number.parseFloat(message.match(/try again in\s+([\d.]+)s/i)?.[1] || '');
+  return Number.isFinite(messageSeconds) ? Math.max(0, messageSeconds * 1000) : 1000;
+}
 
 const resumeJsonSchema = {
   type: 'object', additionalProperties: false,
@@ -25,26 +43,43 @@ async function callGroq({ name, schema, system, input }, env = process.env) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 50_000);
   const request = async (messages, temperature) => {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST', signal: controller.signal,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.GROQ_API_KEY}` },
-      body: JSON.stringify({
-        model: env.GROQ_MODEL || 'openai/gpt-oss-120b',
-        messages,
-        temperature,
-        response_format: { type: 'json_schema', json_schema: { name, strict: true, schema } },
-      }),
-    });
-    const body = await response.json();
-    if (!response.ok) {
-      const error = new Error(body.error?.message || 'Groq request failed.');
-      error.providerBody = body;
-      throw error;
+    for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt += 1) {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST', signal: controller.signal,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.GROQ_API_KEY}` },
+        body: JSON.stringify({
+          model: env.GROQ_MODEL || 'openai/gpt-oss-20b',
+          messages,
+          temperature,
+          reasoning_effort: 'low',
+          response_format: { type: 'json_schema', json_schema: { name, strict: true, schema } },
+        }),
+      });
+      const body = await response.json();
+      if (response.status === 429) {
+        const retryAfterMs = rateLimitWaitMs(response, body);
+        if (attempt < MAX_RATE_LIMIT_RETRIES && retryAfterMs <= MAX_RATE_LIMIT_WAIT_MS) {
+          await wait(retryAfterMs, controller.signal);
+          continue;
+        }
+        const error = new Error(`The AI service is temporarily rate-limited. Please wait ${Math.max(1, Math.ceil(retryAfterMs / 1000))} seconds and try again.`);
+        error.code = 'AI_RATE_LIMITED';
+        error.status = 429;
+        error.providerBody = body;
+        throw error;
+      }
+      if (!response.ok) {
+        const error = new Error(body.error?.message || 'Groq request failed.');
+        error.status = response.status;
+        error.providerBody = body;
+        throw error;
+      }
+      const text = body.choices?.[0]?.message?.content;
+      if (!text) throw new Error('Groq returned no structured output.');
+      try { return JSON.parse(text); }
+      catch (error) { error.failedGeneration = text; throw error; }
     }
-    const text = body.choices?.[0]?.message?.content;
-    if (!text) throw new Error('Groq returned no structured output.');
-    try { return JSON.parse(text); }
-    catch (error) { error.failedGeneration = text; throw error; }
+    throw new Error('Groq request failed after retrying.');
   };
   try {
     const messages = [
@@ -113,6 +148,9 @@ export async function handleAIRequest(body, env = process.env) {
     }
     return { status: 400, body: { error: 'Unknown AI action.' } };
   } catch (error) {
+    if (error?.code === 'AI_RATE_LIMITED') {
+      return { status: 429, body: { code: 'AI_RATE_LIMITED', error: error.message } };
+    }
     const validation = error?.name === 'ZodError' || error instanceof SyntaxError;
     return { status: validation ? 422 : 502, body: { code: validation ? 'MALFORMED_AI_RESPONSE' : 'AI_ERROR', error: validation ? 'The AI returned malformed resume data. Your saved resume was not changed.' : error.message } };
   }
