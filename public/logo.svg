@@ -1,11 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" role="img" aria-label="doitnext.ai logo">
   <defs>
-    <linearGradient id="brand" x1="5" y1="4" x2="35" y2="36" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#2F7BF4"/>
+    <linearGradient id="ink" x1="7" y1="7" x2="33" y2="32" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2878F0"/>
       <stop offset="1" stop-color="#0758D8"/>
     </linearGradient>
   </defs>
-  <rect width="40" height="40" rx="11" fill="url(#brand)"/>
-  <path d="M11.5 20.5l5.2 5.2L29 13.5" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M24.5 13.5H29V18" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="1.5" y="1.5" width="37" height="37" rx="12" fill="#F1F6FF" stroke="#D9E7FF"/>
+  <path d="M19 8v23h-6.2A7.8 7.8 0 1 1 19 18.5" fill="none" stroke="url(#ink)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M22.5 21h10m-4-4 4 4-4 4" fill="none" stroke="url(#ink)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M29.5 8.5v4m-2-2h4" fill="none" stroke="#7BAAF7" stroke-width="1.8" stroke-linecap="round"/>
 </svg>
