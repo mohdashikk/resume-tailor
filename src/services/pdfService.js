@@ -37,7 +37,7 @@ export async function createResumePdfDocument(resume) {
     title: `${sanitizePdfText(resume.name) || 'Resume'} - Resume`,
     subject: 'ATS-friendly professional resume',
     author: sanitizePdfText(resume.name),
-    creator: 'doitnext Resume Tailor',
+    creator: 'doitnext.ai Resume Tailor',
   });
   doc.setLineHeightFactor(1.15);
 

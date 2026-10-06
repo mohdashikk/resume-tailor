@@ -1,7 +1,9 @@
 .app { min-height: 100vh; background: #f7f9fc; color: #111827; }
 .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 30; display: flex; width: 228px; flex-direction: column; border-right: 1px solid #e5e9f0; background: #fff; }
-.brand { display: flex; height: 76px; align-items: center; gap: 12px; padding: 0 28px; color: #111827; text-decoration: none; font-size: 22px; }
-.brandIcon { display: grid; width: 28px; height: 32px; place-items: center; border: 2px solid #1763df; border-radius: 4px; color: #1763df; font-size: 17px; line-height: 1; }
+.brand { display: flex; height: 76px; align-items: center; gap: 11px; padding: 0 24px; color: #111827; text-decoration: none; font-size: 21px; letter-spacing: -.45px; }
+.brand strong { white-space: nowrap; }
+.brand strong span { color: #1763df; }
+.brandIcon { width: 34px; height: 34px; flex: 0 0 auto; }
 .sideNav { display: grid; gap: 5px; padding: 10px 14px; }
 .sideNav button { display: flex; min-height: 46px; align-items: center; gap: 13px; padding: 0 16px; border: 0; border-radius: 9px; background: transparent; color: #526078; cursor: pointer; font-size: 14px; text-align: left; }
 .sideNav button > span { width: 18px; color: #68758c; font-size: 18px; text-align: center; }

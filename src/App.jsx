@@ -97,7 +97,10 @@ export default function App({ recovered = false }) {
 
   return <div className={styles.app}>
     <aside className={styles.sidebar}>
-      <a className={styles.brand} href="#top" aria-label="doitnext home"><span className={styles.brandIcon}>▤</span><strong>doitnext</strong></a>
+      <a className={styles.brand} href="#top" aria-label="doitnext.ai home">
+        <img className={styles.brandIcon} src="/logo.svg" alt="" />
+        <strong>doitnext<span>.ai</span></strong>
+      </a>
       <nav className={styles.sideNav} aria-label="Primary navigation">
         <button className={stage === 1 ? styles.sideActive : ''} onClick={() => setStage(1)}><span>▧</span>Master resume</button>
         <button className={stage === 2 ? styles.sideActive : ''} disabled={!resume.masterResume} onClick={() => setStage(2)}><span>▣</span>Tailor to job</button>
@@ -129,7 +132,7 @@ export default function App({ recovered = false }) {
       </section>}
 
       {stage === 2 && <section className={styles.stage}>
-        <div className={styles.stageIntro}><div><span className={styles.stageNumber}>02</span><h2>Focus on the opportunity</h2><p>Paste the complete job description. doitnext compares it with your master before tailoring.</p></div><span className={styles.filePill}>Master saved</span></div>
+        <div className={styles.stageIntro}><div><span className={styles.stageNumber}>02</span><h2>Focus on the opportunity</h2><p>Paste the complete job description. doitnext.ai compares it with your master before tailoring.</p></div><span className={styles.filePill}>Master saved</span></div>
         <div className={styles.jobGrid}><div className={styles.jobForm}><div className={styles.twoCols}><label>Company <input value={job.company} onChange={(e) => dispatch(jobActions.updateJob({ company: e.target.value }))} placeholder="Acme, Inc." /></label><label>Job title <input value={job.jobTitle} onChange={(e) => dispatch(jobActions.updateJob({ jobTitle: e.target.value }))} placeholder="Senior Product Designer" /></label></div><label>Complete job description <textarea rows="18" value={job.text} onChange={(e) => dispatch(jobActions.updateJob({ text: e.target.value }))} placeholder="Paste the full job description…" /></label><p className={styles.charCount}>{job.text.length.toLocaleString()} / 30,000 characters</p></div><aside className={styles.matchCard}><span className={styles.eyebrow}>Live relevance check</span><div className={styles.score}>{match.coverage}<small>%</small></div><h3>JD keyword coverage</h3><p>The share of recurring JD terms found verbatim in your master resume. It is not an ATS score or hiring probability.</p><div className={styles.termGroup}><strong>Matched</strong><div>{match.matched.length ? match.matched.map((term) => <span className={styles.match} key={term}>{term}</span>) : <em>No recurring terms matched yet.</em>}</div></div><div className={styles.termGroup}><strong>Missing or differently worded</strong><div>{match.missing.length ? match.missing.map((term) => <span className={styles.missing} key={term}>{term}</span>) : <em>Paste a JD to compare.</em>}</div></div></aside></div>
         {tailoring.error && <Status type="error">{tailoring.error}</Status>}
         <div className={styles.generateBar}><div><strong>Your master stays untouched.</strong><span>A separate, editable version will be created.</span></div><button className={styles.primary} disabled={tailoring.status === 'loading' || job.text.trim().length < 80} onClick={generate}>{tailoring.status === 'loading' ? <><span className={styles.spinner} /> Tailoring…</> : 'Generate tailored resume ✦'}</button></div>

@@ -33,12 +33,12 @@ export function saveState(data, storage = localStorage) {
 export function exportBackup(data) {
   const blob = new Blob([JSON.stringify({ format: BACKUP_FORMAT, version: 1, exportedAt: new Date().toISOString(), data }, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
-  anchor.href = url; anchor.download = `doitnext-backup-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); URL.revokeObjectURL(url);
+  anchor.href = url; anchor.download = `doitnext.ai-backup-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); URL.revokeObjectURL(url);
 }
 
 export async function importBackup(file) {
   const parsed = JSON.parse(await file.text());
-  if (![BACKUP_FORMAT, LEGACY_BACKUP_FORMAT].includes(parsed.format) || !parsed.data) throw new Error('This is not a valid doitnext backup.');
+  if (![BACKUP_FORMAT, LEGACY_BACKUP_FORMAT].includes(parsed.format) || !parsed.data) throw new Error('This is not a valid doitnext.ai backup.');
   if (parsed.data.masterResume) resumeSchema.parse(parsed.data.masterResume);
   return parsed.data;
 }

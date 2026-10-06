@@ -1,6 +1,6 @@
-# doitnext Resume Tailor
+# doitnext.ai Resume Tailor
 
-doitnext is a personal, browser-first resume workspace. It extracts PDF, scanned PDF, DOCX, TXT, PNG, JPG, and WebP resume text locally, keeps a validated master resume in `localStorage`, compares it with a job description, and uses a server-only Groq key to create a separate tailored version. Export produces a selectable-text, multi-page A4 PDF.
+doitnext.ai is a personal, browser-first resume workspace. It extracts PDF, scanned PDF, DOCX, TXT, PNG, JPG, and WebP resume text locally, keeps a validated master resume in `localStorage`, compares it with a job description, and uses a server-only Groq key to create a separate tailored version. Export produces a selectable-text, multi-page A4 PDF.
 
 The review stage includes a tailoring edit history with section-level before/after text and labels for recurring JD terms introduced into the tailored wording.
 
