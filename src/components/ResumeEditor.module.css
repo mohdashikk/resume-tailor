@@ -5,7 +5,21 @@
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .field { display: grid; gap: 6px; margin-bottom: 12px; color: #574f61; font-size: 12px; font-weight: 700; }
 .field input, .field textarea, .bullet textarea, .skillRow input { width: 100%; border: 1px solid #cfc7d8; border-radius: 9px; padding: 10px 11px; background: #fff; color: #24202a; font: inherit; font-weight: 400; resize: vertical; }
-.card { position: relative; margin-top: 12px; padding: 14px; border-radius: 11px; background: #f8f6fa; }
+.card { position: relative; margin-top: 10px; padding: 0; overflow: hidden; border: 1px solid #e0e3e9; border-radius: 12px; background: #fff; box-shadow: 0 2px 5px rgba(25,35,55,.04); }
+.accordionSummary { display: flex; min-height: 52px; align-items: center; gap: 10px; padding: 9px 13px; cursor: pointer; list-style: none; }
+.accordionSummary::-webkit-details-marker { display: none; }
+.accordionSummary::after { width: 8px; height: 8px; flex: 0 0 auto; order: 5; margin-left: auto; border-right: 1.7px solid #737d8d; border-bottom: 1.7px solid #737d8d; content: ''; transform: rotate(45deg) translate(-1px, -1px); transition: transform .16s ease; }
+.card[open] > .accordionSummary::after { transform: rotate(225deg) translate(-1px, -1px); }
+.dragHandle { display: inline-grid; width: 18px; flex: 0 0 auto; place-items: center; color: #8b93a0; cursor: grab; font-size: 19px; letter-spacing: -3px; user-select: none; }
+.dragHandle:active { cursor: grabbing; }
+.accordionTitle { color: #1e2634; font-size: 13px; font-weight: 750; }
+.accordionMeta, .accordionCount { color: #7b8495; font-size: 11px; }
+.accordionCount { white-space: nowrap; }
+.summaryDelete { z-index: 1; display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; border-radius: 6px; color: #7b8495; cursor: pointer; font-size: 19px; }
+.summaryDelete:hover { background: #fff0f1; color: #a33d52; }
+.cardBody { padding: 0 16px 15px; }
+.cardBody .grid { padding-top: 4px; }
+.cardBody .cardActions { margin: 8px 0 0; }
 .cardActions { display: flex; justify-content: flex-end; gap: 6px; margin-bottom: 10px; }
 .cardActions button, .skillRow button, .bullet button { border: 0; background: transparent; color: #675b73; cursor: pointer; }
 .cardActions button:disabled { opacity: .3; cursor: default; }
@@ -14,4 +28,26 @@
 .bullets { display: grid; gap: 7px; color: #574f61; font-size: 12px; font-weight: 700; }
 .bullet { display: flex; gap: 5px; }
 .skillRow { display: grid; grid-template-columns: 130px 1fr 30px; gap: 8px; margin-top: 8px; }
+.skillInputRow { display: flex; gap: 8px; }
+.skillInputRow input { flex: 1; min-width: 0; }
+.skillInputRow button { padding: 0 13px; border: 0; border-radius: 8px; background: #f1f2f5; color: #202938; cursor: pointer; font-weight: 700; }
+.field small { color: #8390a2; font-size: 11px; font-weight: 400; }
+.skillChips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 4px; }
+.skillChip { display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px 7px 12px; border-radius: 999px; background: #202124; color: #fff; font-size: 11px; }
+.skillChip button { padding: 0; border: 0; background: transparent; color: #d6d6da; cursor: pointer; font-size: 15px; line-height: 1; }
+.emptyHint { margin: 8px 0 0; color: #7b8495; font-size: 12px; }
 @media (max-width: 620px) { .grid { grid-template-columns: 1fr; } .skillRow { grid-template-columns: 1fr 28px; } .skillRow input:first-child { grid-column: 1 / -1; } }
+.section { border-color: #e3e5ec; border-radius: 12px; box-shadow: 0 2px 8px rgba(20,29,50,.035); }
+.section h3 { color: #202a3c; font-size: 16px; letter-spacing: -.2px; }
+.field { color: #424e63; font-size: 12px; }
+.field input, .field textarea, .bullet textarea, .skillRow input { border-color: #dfe2e9; border-radius: 9px; color: #202a3c; font-size: 13px; transition: border-color .14s ease, box-shadow .14s ease; }
+.field input:focus, .field textarea:focus, .bullet textarea:focus, .skillRow input:focus { border-color: #9382dc; outline: none; box-shadow: 0 0 0 3px rgba(91,69,198,.1); }
+.card { border-color: #e2e5ec; border-radius: 11px; box-shadow: 0 2px 7px rgba(20,29,50,.035); }
+.accordionSummary { min-height: 54px; }
+.accordionTitle { color: #243047; font-size: 13px; }
+.accordionMeta, .accordionCount { font-size: 12px; }
+.accordionSummary::after { width: 9px; height: 9px; border-color: #5e687b; }
+.dragHandle { color: #8992a1; }
+.skillInputRow button { background: #f0edfb; color: #5140ad; }
+.skillChip { background: #292b32; font-size: 12px; }
+.add, .textButton { color: #5742ba; }

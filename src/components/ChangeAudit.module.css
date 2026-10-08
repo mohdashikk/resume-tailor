@@ -23,3 +23,10 @@
 .columns .after p { color: #233a60; }
 .empty { margin: 4px 0 0; color: #766c7d; font-size: 13px; }
 @media (max-width: 700px) { .panel { padding: 15px; } .heading { align-items: flex-start; } .columns { grid-template-columns: 1fr; } .columns > div:first-child { border-right: 0; border-bottom: 1px solid #e8e2eb; } .changeHead { flex-direction: column; } .changeHead > div { justify-content: flex-start; } }
+.panel { border-color: #e2e5ed; border-radius: 12px; box-shadow: 0 2px 8px rgba(20,29,50,.035); }
+.heading h3 { color: #202a3c; }
+.eyebrow { color: #5b45c6; font-size: 10px; letter-spacing: .9px; }
+.count { color: #5540b8; background: #f0edfb; font-size: 11px; }
+.jdBox { border-color: #e2def2; background: #faf9fd; }
+.jdBox strong { color: #5140ad; }
+.terms span, .changeHead span { color: #5540b8; background: #f0edfb; font-size: 10px; }
