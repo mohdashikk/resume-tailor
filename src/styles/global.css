@@ -1,8 +1,8 @@
-:root { font-family: Inter, "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; color: #172033; background: #f5f6fa; font-size: 14px; font-synthesis: none; text-rendering: optimizeLegibility; font-optical-sizing: auto; }
+:root { font-family: Inter, "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; color: #101a3d; background: #f4f8ff; font-size: 14px; font-synthesis: none; text-rendering: optimizeLegibility; font-optical-sizing: auto; }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
-body { margin: 0; min-width: 320px; min-height: 100vh; background: #f5f6fa; -webkit-font-smoothing: antialiased; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: #f4f8ff; -webkit-font-smoothing: antialiased; }
 button, input, textarea { font: inherit; }
 input, textarea { font-weight: 400; }
-button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible { outline: 3px solid rgba(91, 73, 202, .25); outline-offset: 2px; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible, a:focus-visible { outline: 3px solid rgba(59, 89, 228, .24); outline-offset: 2px; }
 button:disabled { cursor: not-allowed; opacity: .5; }

@@ -19,6 +19,19 @@ const editorSections = [['personal', 'Personal info'], ['skills', 'Skills'], ['e
 
 function Status({ type = 'info', children }) { return children ? <div className={`${styles.status} ${styles[type]}`} role={type === 'error' ? 'alert' : 'status'}>{children}</div> : null; }
 
+function AiLoading({ title, message, steps = [] }) {
+  return <div className={styles.aiLoading} role="status" aria-live="polite">
+    <div className={styles.aiLoaderVisual} aria-hidden="true">
+      <span className={styles.aiOrbitOne}><i /></span>
+      <span className={styles.aiOrbitTwo}><i /></span>
+      <span className={styles.aiCore}>✦</span>
+      <span className={styles.aiScanLine} />
+    </div>
+    <div className={styles.aiLoadingCopy}><span className={styles.eyebrow}>DOITNEXT AI</span><h3>{title}</h3><p>{message}</p></div>
+    <div className={styles.aiLoadingSteps} aria-hidden="true">{steps.map((step, index) => <span key={step} style={{ '--delay': `${index * .22}s` }}><i />{step}</span>)}</div>
+  </div>;
+}
+
 function NavIcon({ name }) {
   if (name === 'resume') return <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.5 2.75h7l4 4v14.5h-11z" /><path d="M13.5 2.75v4h4M9.5 11h5M9.5 15h5M9.5 18h3" /></svg>;
   if (name === 'tailor') return <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m4.25 19.75 10.9-10.9 3 3-10.9 10.9zM13.65 10.35l3 3" /><path d="M18.5 2.5v4M16.5 4.5h4M7 3v3M5.5 4.5h3" /></svg>;
@@ -151,7 +164,8 @@ export default function App({ recovered = false }) {
     <aside className={styles.sidebar}>
       <div className={styles.siteWrapper}>
       <a className={styles.brand} href="#top" aria-label="doitnext.ai home">
-        <strong>doitnext<span>.ai</span></strong>
+        <span className={styles.brandMark} aria-hidden="true">✦</span>
+        <span className={styles.brandCopy}><strong>doitnext<span>.ai</span></strong><small>Resume intelligence studio</small></span>
       </a>
       <nav className={styles.sideNav} aria-label="Primary navigation">
         <button className={stage === 1 ? styles.sideActive : ''} onClick={() => setStage(1)}><NavIcon name="resume" />My resumes</button>
@@ -203,7 +217,7 @@ export default function App({ recovered = false }) {
           </div>
           <div className={styles.atsReportColumn}>
           <aside className={styles.matchCard}>
-            {!atsChecked && !atsLoading ? <div className={styles.atsEmpty}>
+            {atsLoading ? <AiLoading title="Analyzing your job match" message="Reading the job description and comparing it with evidence across your resume." steps={['Extracting requirements', 'Matching experience', 'Calculating score']} /> : !atsChecked ? <div className={styles.atsEmpty}>
               <svg viewBox="0 0 64 64" aria-hidden="true" focusable="false"><path d="M10 43a22 22 0 0 1 44 0" /><path d="m32 40 10-13" /><circle cx="32" cy="40" r="2.5" /></svg>
               <h3>Your ATS score will appear here</h3>
               <p>Choose a resume, paste a job description, and run the check to see your match and missing keywords.</p>
@@ -242,20 +256,23 @@ export default function App({ recovered = false }) {
               {tailoring.error && <Status type="error">{tailoring.error}</Status>}
             </section>
           </div>
-          <aside className={`${styles.previewPane} ${styles.tailorPreview}`}><div className={styles.previewHeader}><div><h3>Base resume preview</h3><span>This version will not be changed.</span></div></div><ResumePreview resume={atsResume} label="Base resume preview" /></aside>
+          <aside className={`${styles.previewPane} ${styles.tailorPreview}`}><div className={styles.previewHeader}><div><h3>{tailoring.status === 'loading' ? 'Creating tailored resume' : 'Base resume preview'}</h3><span>{tailoring.status === 'loading' ? 'AI is preparing the result.' : 'This version will not be changed.'}</span></div></div>{tailoring.status === 'loading' && <div className={styles.aiPreviewOverlay}><AiLoading title="Building your tailored resume" message="Strengthening relevant experience while preserving the facts in your base resume." steps={['Mapping job priorities', 'Rewriting with evidence', 'Validating final resume']} /></div>}<div className={tailoring.status === 'loading' ? styles.previewProcessing : ''}><ResumePreview resume={atsResume} label="Base resume preview" /></div></aside>
         </div>
       </section>}
 
       {stage === 4 && tailoring.current && <section className={`${styles.stage} ${styles.reviewStage}`}>
-        <div className={styles.finalActions}><button className={styles.secondary} onClick={saveVersion}>Save draft</button><button className={styles.primary} onClick={exportTailoredResume}>Export PDF</button></div>
+        <div className={styles.reviewToolbar}>
+          <div className={styles.reviewTitle}><span className={styles.reviewBreadcrumb}>Tailor & review <b>›</b> {job.jobTitle || 'Job-specific resume'}</span><h2>{tailoring.current.resume.title || job.jobTitle || 'Tailored resume'}</h2><p>Tailored from {atsResume.name || 'your selected resume'} · Master resume unchanged</p></div>
+          <div className={styles.reviewToolbarStatus}><span>✓ Ready to review</span><div className={styles.finalActions}><button className={styles.secondary} onClick={saveVersion}>Save draft</button><button className={styles.primary} onClick={exportTailoredResume}>Export PDF</button></div></div>
+        </div>
         <div className={styles.mobileReviewToggle}>{viewToggle}</div>
         <div className={`${styles.reviewGrid} ${styles[mobileView]}`}>
           <div className={styles.reviewColumn}>
-            <section className={styles.roleCard}><div className={styles.roleIcon}>▦</div><div><h2>{job.jobTitle || 'Target role'}</h2><p>{job.company || 'Job-specific version'}<span>•</span>{atsResume.name || 'Selected resume'}</p><small>● Job description added</small></div><button className={styles.textAction} onClick={() => setStage(2)}>✎ Edit</button></section>
+            <section className={styles.roleCard}><div className={styles.roleIcon}>✦</div><div><span className={styles.copilotLabel}>AI COPILOT</span><h2>{job.jobTitle || 'Target role'}</h2><p>{job.company || 'Job-specific version'}<span>•</span>{atsResume.name || 'Selected resume'}</p><small>● Job description analyzed</small></div><button className={styles.textAction} onClick={() => setStage(2)}>✎ Edit</button></section>
             <div className={styles.metricGrid}><div><span className={styles.metricIcon}>☷</span><p>Matched skills<strong>{match.matched.length} / {Math.max(match.keywords.length, match.matched.length)}</strong></p></div><div><span className={`${styles.metricIcon} ${styles.amber}`}>☆</span><p>Missing terms<strong>{match.missing.length}</strong></p></div><div><span className={`${styles.metricIcon} ${styles.green}`}>▤</span><p>AI ATS estimate<strong>{atsChecked ? `${aiAtsReview.score}%` : '—'}</strong></p></div></div>
             <section className={styles.insightPanel}><div className={styles.panelHeading}><div><h3>Job match insights</h3><p>Review what matches and what still needs attention.</p></div><span>{match.coverage}% match</span></div><div className={styles.matchRows}>{match.matched.slice(0, 5).map((term) => <div key={term}><span className={styles.check}>✓</span><p><strong>{term}</strong><small>Found in the selected resume.</small></p><em>In resume</em></div>)}</div>{tailoring.current.missingRequirements.length > 0 && <div className={styles.reviewWarning}>! &nbsp; {tailoring.current.missingRequirements.length} requirements need your review</div>}</section>
             <div className={styles.insights}><div><h3>What changed</h3><ul>{tailoring.current.changeSummary.map((item) => <li key={item}>{item}</li>)}</ul></div><div><h3>Missing requirements</h3>{tailoring.current.missingRequirements.length ? <><p className={styles.requirementHelp}>Only confirm requirements you genuinely have.</p><ul className={styles.requirementList}>{tailoring.current.missingRequirements.map((item, index) => <li key={`${item}-${index}`}><span>{item}</span><button type="button" onClick={() => addMissingRequirement(item)}>I have this · add</button></li>)}</ul></> : <p>No explicit missing requirements were flagged.</p>}</div></div>
-            <ChangeAudit master={atsResume} tailored={tailoring.current.resume} jdKeywords={match.keywords} />
+            <ChangeAudit master={atsResume} tailored={tailoring.current.resume} jdKeywords={match.keywords} onChange={(value) => dispatch(tailoringActions.updateTailoredResume(value))} />
             <details className={styles.editorDetails}><summary><span>Edit tailored resume</span><small>Changes here never modify the master.</small></summary><div className={styles.editorPane}><ResumeEditor resume={tailoring.current.resume} onChange={(value) => dispatch(tailoringActions.updateTailoredResume(value))} /></div></details>
             {tailoring.versions.length > 0 && <section className={styles.versions}><h3>Saved versions</h3>{tailoring.versions.map((version) => <button key={version.id} onClick={() => { dispatch(tailoringActions.loadVersion(version)); dispatch(jobActions.hydrateJob({ company: version.company || '', jobTitle: version.jobTitle || '', text: version.jobDescription || '' })); }}><strong>{version.jobTitle || 'Untitled role'} · {version.company || 'Unknown company'}</strong><span>{new Date(version.createdAt).toLocaleString()}</span></button>)}</section>}
           </div>

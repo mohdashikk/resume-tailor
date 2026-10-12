@@ -1,27 +1,73 @@
-import { useMemo } from 'react';
-import { buildChangeAudit } from '../services/changeAuditService';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { buildChangeAudit, rejectAuditChange } from '../services/changeAuditService';
 import styles from './ChangeAudit.module.css';
 
-export default function ChangeAudit({ master, tailored, jdKeywords }) {
+export default function ChangeAudit({ master, tailored, jdKeywords, onChange }) {
   const audit = useMemo(() => buildChangeAudit(master, tailored, jdKeywords), [master, tailored, jdKeywords]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [isOpen, setIsOpen] = useState(true);
+  const [decisions, setDecisions] = useState({});
 
-  return <section className={styles.panel} aria-labelledby="edit-history-title">
-    <div className={styles.heading}>
-      <div><span className={styles.eyebrow}>Before → after</span><h3 id="edit-history-title">Tailoring edit history</h3><p>See exactly where the tailored resume differs from your master.</p></div>
-      <span className={styles.count}>{audit.changes.length} edits</span>
+  useEffect(() => {
+    setActiveIndex((current) => Math.max(0, Math.min(current, audit.changes.length - 1)));
+  }, [audit.changes.length]);
+
+  const safeIndex = Math.max(0, Math.min(activeIndex, audit.changes.length - 1));
+  const change = audit.changes[safeIndex];
+  const reviewedCount = Object.keys(decisions).length;
+  const move = (direction) => setActiveIndex((current) => {
+    const total = audit.changes.length;
+    if (!total) return 0;
+    return (current + direction + total) % total;
+  });
+  const decide = (decision) => {
+    if (!change) return;
+    if (decision === 'rejected' && onChange) onChange(rejectAuditChange(tailored, master, change));
+    setDecisions((current) => ({ ...current, [change.id]: decision }));
+    if (safeIndex < audit.changes.length - 1) {
+      setActiveIndex(safeIndex + 1);
+    } else {
+      setIsOpen(false);
+    }
+  };
+
+  if (!audit.changes.length) return null;
+
+  if (!isOpen) {
+    return createPortal(<button type="button" className={styles.launcher} onClick={() => setIsOpen(true)}>
+      <span>✦</span><strong>{reviewedCount >= audit.changes.length ? 'AI edits reviewed' : 'Review AI edits'}</strong><em>{reviewedCount}/{audit.changes.length}</em>
+    </button>, document.body);
+  }
+
+  const currentDecision = decisions[change.id];
+  const reason = change.jdTerms.length
+    ? `Uses relevant job language such as ${change.jdTerms.slice(0, 3).join(', ')} while keeping the resume grounded in your source content.`
+    : 'Improves clarity, relevance, and readability while preserving the facts from your base resume.';
+
+  return createPortal(<section className={styles.panel} aria-labelledby="edit-history-title" aria-live="polite">
+    <header className={styles.heading}>
+      <div className={styles.title}><span className={styles.spark}>✦</span><div><h3 id="edit-history-title">AI change review</h3><p>{change.location}</p></div></div>
+      <div className={styles.navigation}>
+        <span>{safeIndex + 1} of {audit.changes.length}</span>
+        <button type="button" aria-label="Previous change" onClick={() => move(-1)}>‹</button>
+        <button type="button" aria-label="Next change" onClick={() => move(1)}>›</button>
+        <button type="button" className={styles.close} aria-label="Close change review" onClick={() => setIsOpen(false)}>×</button>
+      </div>
+    </header>
+
+    <div className={styles.columns}>
+      <div><small>Before</small><p>{change.before}</p></div>
+      <div className={styles.after}><small>After</small><p>{change.after}</p></div>
     </div>
 
-    <div className={styles.jdBox}>
-      <strong>JD language introduced</strong>
-      <p>These tracked JD terms appear in the tailored version but were not present verbatim in the master. Review them for accuracy—they are wording matches, not proof of a qualification.</p>
-      <div className={styles.terms}>{audit.introducedTerms.length ? audit.introducedTerms.map((term) => <span key={term}>{term}</span>) : <em>No new tracked JD terms were introduced.</em>}</div>
+    <div className={styles.footer}>
+      <div className={styles.reason}><span>i</span><p><strong>Why this change?</strong>{reason}</p></div>
+      <div className={styles.actions}>
+        <button type="button" className={`${styles.reject} ${currentDecision === 'rejected' ? styles.selected : ''}`} onClick={() => decide('rejected')}>× Reject</button>
+        <button type="button" className={`${styles.accept} ${currentDecision === 'accepted' ? styles.selected : ''}`} onClick={() => decide('accepted')}>✓ Accept</button>
+      </div>
     </div>
-
-    <div className={styles.changeList}>
-      {audit.changes.length ? audit.changes.map((change) => <article className={styles.change} key={change.id}>
-        <div className={styles.changeHead}><strong>{change.location}</strong>{change.jdTerms.length > 0 && <div>{change.jdTerms.map((term) => <span key={term}>JD: {term}</span>)}</div>}</div>
-        <div className={styles.columns}><div><small>Master</small><p>{change.before}</p></div><div className={styles.after}><small>Tailored</small><p>{change.after}</p></div></div>
-      </article>) : <p className={styles.empty}>No text differences detected between the master and tailored version.</p>}
-    </div>
-  </section>;
+    <div className={styles.progress} aria-label={`${reviewedCount} of ${audit.changes.length} changes reviewed`}><span style={{ width: `${(reviewedCount / audit.changes.length) * 100}%` }} /></div>
+  </section>, document.body);
 }

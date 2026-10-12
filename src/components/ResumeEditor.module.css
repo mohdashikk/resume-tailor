@@ -51,3 +51,35 @@
 .skillInputRow button { background: #f0edfb; color: #5140ad; }
 .skillChip { background: #292b32; font-size: 12px; }
 .add, .textButton { color: #5742ba; }
+
+/* Futuristic studio editor surfaces */
+.editor { gap: 16px; }
+.section {
+  padding: 20px;
+  border-color: #dce6f5;
+  border-radius: 14px;
+  background: rgba(255,255,255,.94);
+  box-shadow: 0 12px 32px rgba(51,73,122,.07), inset 0 1px 0 rgba(255,255,255,.8);
+}
+.section h3 { color: #142044; font-size: 17px; letter-spacing: -.3px; }
+.field { color: #465576; font-weight: 700; }
+.field input, .field textarea, .bullet textarea, .skillRow input {
+  border-color: #d5e0ef;
+  border-radius: 10px;
+  background: #fbfdff;
+  color: #17213f;
+}
+.field input:focus, .field textarea:focus, .bullet textarea:focus, .skillRow input:focus {
+  border-color: #7188f5;
+  box-shadow: 0 0 0 4px rgba(70,94,235,.1);
+}
+.card { border-color: #dce5f2; border-radius: 12px; box-shadow: 0 7px 22px rgba(45,64,110,.055); }
+.card[open] { border-color: #c8d6f6; box-shadow: 0 11px 28px rgba(49,69,129,.09); }
+.accordionSummary { background: linear-gradient(100deg, #fff, #f9fbff); }
+.card[open] > .accordionSummary { background: linear-gradient(100deg, #f2f6ff, #f7f3ff); }
+.accordionTitle { color: #1d2a50; }
+.accordionSummary::after { border-color: #536ce5; }
+.add, .textButton { color: #3b59da; }
+.skillInputRow button { background: linear-gradient(110deg, #eaf0ff, #f2edff); color: #3854d3; }
+.skillChip { border: 1px solid #cad7fb; background: #edf3ff; color: #2945b5; }
+.skillChip button { color: #6579c9; }
