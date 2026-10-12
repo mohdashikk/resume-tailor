@@ -14,6 +14,7 @@ export function loadSavedState(storage = localStorage) {
     if (!raw) return { data: null, recovered: false };
     const parsed = JSON.parse(raw);
     if (parsed.masterResume) resumeSchema.parse(parsed.masterResume);
+    (parsed.resumeLibrary || []).forEach((entry) => resumeSchema.parse(entry.resume));
     (parsed.versions || []).forEach((version) => tailoredResultSchema.parse({ resume: version.resume, changeSummary: version.changeSummary, missingRequirements: version.missingRequirements }));
     if (sourceKey === LEGACY_STORAGE_KEY) {
       try { storage.setItem(STORAGE_KEY, raw); storage.removeItem(LEGACY_STORAGE_KEY); } catch { /* migration can retry later */ }
@@ -40,5 +41,6 @@ export async function importBackup(file) {
   const parsed = JSON.parse(await file.text());
   if (![BACKUP_FORMAT, LEGACY_BACKUP_FORMAT].includes(parsed.format) || !parsed.data) throw new Error('This is not a valid doitnext.ai backup.');
   if (parsed.data.masterResume) resumeSchema.parse(parsed.data.masterResume);
+  (parsed.data.resumeLibrary || []).forEach((entry) => resumeSchema.parse(entry.resume));
   return parsed.data;
 }

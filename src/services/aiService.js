@@ -43,5 +43,6 @@ async function postAI(action, payload) {
 }
 
 export const parseResumeWithAI = (rawText) => postAI('parse', { rawText });
+export const analyzeAtsWithAI = (resume, jobDescription) => postAI('ats', { resume, jobDescription });
 export const tailorResumeWithAI = (masterResume, jobDescription, company, jobTitle) =>
   postAI('tailor', { masterResume, jobDescription, company, jobTitle });

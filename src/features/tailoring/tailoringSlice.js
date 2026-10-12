@@ -6,6 +6,7 @@ const slice = createSlice({
   reducers: {
     setTailoringStatus(state, action) { Object.assign(state, action.payload); },
     setTailoredResult(state, action) { state.current = action.payload; state.status = 'succeeded'; state.error = ''; },
+    clearCurrent(state) { state.current = null; state.status = 'idle'; state.error = ''; },
     updateTailoredResume(state, action) { if (state.current) state.current.resume = action.payload; },
     confirmMissingRequirement(state, action) {
       if (!state.current) return;
