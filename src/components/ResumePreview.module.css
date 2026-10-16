@@ -1,22 +1,24 @@
-.paper { width: min(100%, 210mm); min-height: 297mm; padding: 12mm 13mm; margin: 0 auto; background: #fff; color: #111; box-shadow: 0 7px 24px rgba(31, 42, 60, .09); font-family: Georgia, 'Times New Roman', serif; font-size: 8.8pt; line-height: 1.28; }
-.header { padding-bottom: 9px; border-bottom: 1px solid #232323; text-align: left; }
+.paper { width: min(100%, 210mm); min-height: 297mm; padding: 11mm 10.5mm; margin: 0 auto; background: #fff; color: #111; box-shadow: 0 7px 24px rgba(31, 42, 60, .09); font-family: Inter, Arial, sans-serif; font-size: 9.8pt; line-height: 1.6; }
+.header { padding-bottom: 9px; border-bottom: 0; text-align: left; }
 .header, .section { transition: background-color .25s ease, box-shadow .25s ease; scroll-margin: 16px; }
 .highlighted { position: relative; z-index: 1; border-radius: 5px; background-color: #f5efff; box-shadow: 0 0 0 7px #f5efff, 0 0 0 9px rgba(130, 61, 220, .42); }
-.header h1 { margin: 0; color: #0c0c0c; font-size: 22pt; font-weight: 700; letter-spacing: .2px; text-transform: uppercase; }
-.title { margin: 3px 0 9px; color: #111; font-size: 11.5pt; }
-.contact, .links { display: inline; margin: 0 9px 0 0; font-size: 7.5pt; overflow-wrap: anywhere; }
+.header h1 { margin: 0; color: #0c0c0c; font-size: 18pt; font-weight: 700; letter-spacing: .2px; text-transform: uppercase; }
+.title { margin: 3px 0 9px; color: #111; font-size: 10.5pt; font-weight: 700; }
+.contact, .links { display: inline; margin: 0; font-size: 9pt; overflow-wrap: anywhere; }
 .links a { color: #111; text-decoration: none; }
-.section { margin-top: 12px; padding-top: 9px; border-top: 1px solid #666; break-inside: auto; }
+.section { margin-top: 18px; padding-top: 0; border-top: 0; break-inside: auto; }
 .header + .section { padding-top: 0; border-top: 0; }
-.section h2 { margin: 0 0 6px; color: #111; font-size: 9.2pt; letter-spacing: 1px; text-transform: uppercase; }
+.section h2 { margin: 0 0 6px; color: #111; padding-bottom: 4px; border-bottom: 1px solid #ccc; font-size: 9.8pt; letter-spacing: 0; text-transform: uppercase; }
 .section p { margin: 2px 0; }
-.skillList { line-height: 1.7; }
+.skillList { line-height: 1.6; }
 .item { margin-bottom: 8px; break-inside: avoid; }
 .itemHead { display: flex; justify-content: space-between; gap: 12px; }
-.itemHead > div { display: grid; gap: 1px; }
-.itemHead strong { font-size: 9pt; }
-.itemHead b { font-size: 8pt; }
-.itemHead span { white-space: nowrap; font-size: 7.5pt; }
+.itemHead > div { display: block; }
+.itemHead strong { font-size: 9.8pt; }
+.itemHead b { font-size: inherit; font-weight: 400; }
+.itemHead b::before { content: ", "; }
+.itemHead span { flex: 0 1 45%; text-align: right; overflow-wrap: anywhere; font-size: 9pt; color: #555; }
+.itemHead > div { min-width: 0; flex: 1; }
 .meta { color: #333; font-size: 7.5pt; font-style: italic; }
 .section ul { padding-left: 14px; margin: 3px 0; }
 .section li { margin: 1px 0; }

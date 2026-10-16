@@ -1,3 +1,5 @@
+@font-face { font-family: Inter; src: url('/fonts/Inter-Regular.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: Inter; src: url('/fonts/Inter-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
 :root { font-family: Inter, "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; color: #17213b; background: #f8faff; font-size: 14px; font-synthesis: none; text-rendering: optimizeLegibility; font-optical-sizing: auto; }
 :root { --brand-spectrum: linear-gradient(100deg, #9066ff 0%, #6485f5 48%, #39c6e7 100%); --brand-action: linear-gradient(110deg, #6045d9, #2563eb); }
 * { box-sizing: border-box; }

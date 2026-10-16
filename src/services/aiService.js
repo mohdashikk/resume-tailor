@@ -1,3 +1,4 @@
+import { analysisKey, readCachedAnalysis, cacheAnalysis } from './atsAnalysis';
 const REQUEST_TIMEOUT = 55000;
 
 async function postAI(action, payload) {
@@ -43,6 +44,23 @@ async function postAI(action, payload) {
 }
 
 export const parseResumeWithAI = (rawText) => postAI('parse', { rawText });
-export const analyzeAtsWithAI = (resume, jobDescription) => postAI('ats', { resume, jobDescription });
-export const tailorResumeWithAI = (masterResume, jobDescription, company, jobTitle) =>
-  postAI('tailor', { masterResume, jobDescription, company, jobTitle });
+const inFlight = new Map();
+const validatedResults = new Map();
+export const analyzeAtsWithAI = async (resume, jobDescription) => {
+  const key = analysisKey(resume, jobDescription);
+  const cached = readCachedAnalysis(resume, jobDescription);
+  if (cached) return cached;
+  if (validatedResults.has(key)) return structuredClone(validatedResults.get(key));
+  if (!inFlight.has(key)) {
+    const pending = postAI('ats', { resume, jobDescription }).then((report) => {
+      const validated = cacheAnalysis(report, resume, jobDescription);
+      validatedResults.set(key, validated);
+      if (validatedResults.size > 20) validatedResults.delete(validatedResults.keys().next().value);
+      return validated;
+    }).finally(() => inFlight.delete(key));
+    inFlight.set(key, pending);
+  }
+  return structuredClone(await inFlight.get(key));
+};
+export const tailorResumeWithAI = (masterResume, jobDescription, company, jobTitle, analysis) =>
+  postAI('tailor', { masterResume, jobDescription, company, jobTitle, analysis });

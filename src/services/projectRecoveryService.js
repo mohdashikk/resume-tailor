@@ -1,5 +1,5 @@
-const PROJECT_HEADING = /^(projects|selected\s+projects|freelance\s+projects|selected\s+freelance\s+projects)\s*:?$/i;
-const NEXT_HEADING = /^(education|certifications?|licenses?|awards?|publications?|languages?|interests?|references?)\s*:?$/i;
+import { splitResumeSections } from './resumeSections.js';
+const PROJECT_HEADING = /^(projects|selected\s+projects|freelance\s+projects|selected\s+freelance\s+projects|personal\s+projects|academic\s+projects)\s*:?$/i;
 const DESCRIPTION_START = /^(designed|built|created|developed|delivered|implemented|led|managed|redesigned|supported|enabled|produced|worked|collaborated|improved|translated)\b/i;
 
 function clean(value) {
@@ -52,17 +52,16 @@ function prepareProjectText(rawText) {
 }
 
 export function extractProjectDescriptions(rawText) {
-  const lines = prepareProjectText(rawText).split(/\r?\n/).map(clean).filter(Boolean);
-  const projectLines = [];
-  let insideProjects = false;
-  for (const line of lines) {
-    if (PROJECT_HEADING.test(line)) { insideProjects = true; continue; }
-    if (insideProjects && NEXT_HEADING.test(line)) break;
-    if (insideProjects) projectLines.push(line);
-  }
+  const projectLines = splitResumeSections(rawText).projects || [];
 
   const projects = [];
-  projectLines.forEach((line) => {
+  projectLines.forEach((rawLine) => {
+    const line = clean(rawLine);
+    const previous = projects.at(-1);
+    if (previous && /^\s*[•●▪◦+*-]\s*/.test(rawLine)) {
+      previous.description = clean(`${previous.description} ${line}`);
+      return;
+    }
     const separator = line.match(/(?:\s+[-–—]\s+|\s*:\s+)/);
     if (separator) {
       const index = separator.index;
@@ -71,8 +70,7 @@ export function extractProjectDescriptions(rawText) {
       if (name) projects.push({ name, description });
       return;
     }
-    const previous = projects.at(-1);
-    if (previous && (DESCRIPTION_START.test(line) || previous.description)) {
+    if (previous && (DESCRIPTION_START.test(line) || (previous.description && (/^[a-z]/.test(line) || line.length > 180)))) {
       previous.description = clean(`${previous.description} ${line}`);
     } else if (line.length <= 180) {
       projects.push({ name: line, description: '' });

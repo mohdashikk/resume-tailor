@@ -30,6 +30,7 @@ export const resumeSchema = z.object({
   projects: z.array(projectSchema).max(50).default([]),
   education: z.array(educationSchema).max(30).default([]),
   certifications: z.array(z.object({ id: z.string(), name: shortText, issuer: shortText, date: shortText })).max(30).default([]),
+  languages: z.array(shortText).max(50).default([]),
   ambiguities: z.array(text).max(50).default([]),
 });
 
@@ -41,7 +42,7 @@ export const tailoredResultSchema = z.object({
 
 export const blankResume = () => ({
   id: crypto.randomUUID(), name: '', title: '', contact: { email: '', phone: '', location: '' },
-  links: [], summary: '', projectSectionTitle: 'Projects', skillGroups: [], experience: [], projects: [], education: [], certifications: [], ambiguities: [],
+  links: [], summary: '', projectSectionTitle: 'Projects', skillGroups: [], experience: [], projects: [], education: [], certifications: [], languages: [], ambiguities: [],
 });
 
 export function normalizeResume(candidate) {
@@ -60,4 +61,12 @@ export function normalizeResume(candidate) {
 
 export function validateResume(candidate) {
   return resumeSchema.safeParse(candidate);
+}
+
+export function formatResumeError(error) {
+  if (Array.isArray(error?.issues)) {
+    const fields = error.issues.slice(0, 3).map(({ path }) => path.map((part) => typeof part === 'number' ? `entry ${part + 1}` : part).join(' / '));
+    return `Some resume fields could not be read reliably${fields.length ? ` (${fields.join('; ')})` : ''}. Review the source text or try a clearer file.`;
+  }
+  return error?.message || 'The resume could not be read. Please try another file or paste the text.';
 }

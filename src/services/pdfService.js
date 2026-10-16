@@ -1,6 +1,7 @@
+import { registerResumeFonts } from './resumeFonts.js';
 import { projectDisplayName, projectDisplaySubtitle } from './projectRecoveryService.js';
 
-const PAGE = { width: 210, height: 297, left: 16, right: 16, top: 14, bottom: 17 };
+const PAGE = { width: 210, height: 297, left: 10.5, right: 10.5, top: 14, bottom: 17 };
 const COLOR = { ink: [24, 24, 24], muted: [84, 84, 84], rule: [181, 181, 181] };
 const PT_TO_MM = 0.3528;
 
@@ -29,6 +30,7 @@ export function calculateSkillLabelColumnWidth(groups, measureText, usableWidth)
 export async function createResumePdfDocument(resume) {
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true, putOnlyUsedFonts: true });
+  await registerResumeFonts(doc);
   const usable = PAGE.width - PAGE.left - PAGE.right;
   let y = PAGE.top;
   let activeSection = '';
@@ -41,14 +43,14 @@ export async function createResumePdfDocument(resume) {
   });
   doc.setLineHeightFactor(1.15);
 
-  const setType = (size = 9.1, style = 'normal', color = COLOR.ink) => {
-    doc.setFont('times', style);
+  const setType = (size = 9.8, style = 'normal', color = COLOR.ink) => {
+    doc.setFont('Inter', style === 'bold' ? 'bold' : 'normal');
     doc.setFontSize(size);
     doc.setTextColor(...color);
     doc.setCharSpace(0);
   };
-  const lineHeight = (size) => size * PT_TO_MM * 1.22;
-  const split = (text, width, size = 9.1, style = 'normal') => {
+  const lineHeight = (size) => size * PT_TO_MM * 1.6;
+  const split = (text, width, size = 9.8, style = 'normal') => {
     setType(size, style);
     return doc.splitTextToSize(sanitizePdfText(text), Math.max(width, 12));
   };
@@ -56,9 +58,9 @@ export async function createResumePdfDocument(resume) {
     if (!activeSection) return;
     setType(7.2, 'bold', COLOR.muted);
     doc.text(`${activeSection.toUpperCase()} - CONTINUED`, PAGE.left, y);
-    y += 5;
+    y += 8;
     doc.setDrawColor(...COLOR.rule);
-    doc.line(PAGE.left, y - 2, PAGE.width - PAGE.right, y - 2);
+    doc.line(PAGE.left, y - 5, PAGE.width - PAGE.right, y - 5);
   };
   const addPage = () => {
     doc.addPage();
@@ -69,7 +71,7 @@ export async function createResumePdfDocument(resume) {
     if (y + height > PAGE.height - PAGE.bottom) addPage();
   };
   const writeParagraph = (text, options = {}) => {
-    const { size = 9.1, style = 'normal', color = COLOR.ink, x = PAGE.left, width = usable, gap = 1.3, url = '' } = options;
+    const { size = 9.8, style = 'normal', color = COLOR.ink, x = PAGE.left, width = usable, gap = 1.3, url = '' } = options;
     const lines = split(text, width, size, style);
     const leading = lineHeight(size);
     if (!lines.length) return;
@@ -89,7 +91,7 @@ export async function createResumePdfDocument(resume) {
     }
     activeSection = title;
     y += 3.4;
-    setType(9, 'bold', COLOR.ink);
+    setType(9.8, 'bold', COLOR.ink);
     doc.text(title.toUpperCase(), PAGE.left, y);
     doc.setDrawColor(...COLOR.rule);
     doc.setLineWidth(0.25);
@@ -123,20 +125,40 @@ export async function createResumePdfDocument(resume) {
     const label = sanitizePdfText(group.name || 'Skills');
     const value = sanitizePdfText((group.skills || []).join(', '));
     if (!value) return;
-    writeParagraph(label.toUpperCase(), { size: 8.2, style: 'bold', gap: 0.2 });
-    writeParagraph(value, { size: 8.8, gap: 1.4 });
+    const size = 9.8;
+    setType(size, 'bold');
+    const labelWidth = doc.getTextWidth(`${label}: `);
+    if (labelWidth > usable * 0.6) {
+      writeParagraph(`${label}:`, { size, style: 'bold', gap: 0 });
+      writeParagraph(value, { size, gap: 1 });
+      return;
+    }
+    const words = value.split(' ');
+    let first = '';
+    setType(size);
+    while (words.length && doc.getTextWidth([first, words[0]].filter(Boolean).join(' ')) <= usable - labelWidth) {
+      first = [first, words.shift()].filter(Boolean).join(' ');
+    }
+    ensureSpace(lineHeight(size) * 2);
+    setType(size, 'bold');
+    doc.text(`${label}:`, PAGE.left, y);
+    setType(size);
+    doc.text(first, PAGE.left + labelWidth, y);
+    y += lineHeight(size);
+    if (words.length) writeParagraph(words.join(' '), { size, gap: 1 });
+    else y += 1;
   };
   const writeItemHeader = (left, right = '') => {
     const safeLeft = sanitizePdfText(left);
     const safeRight = sanitizePdfText(right);
     setType(8.1, 'normal', COLOR.muted);
-    const dateWidth = safeRight ? Math.min(doc.getTextWidth(safeRight) + 4, 48) : 0;
+    const dateWidth = safeRight ? Math.min(doc.getTextWidth(safeRight) + 4, usable * 0.45) : 0;
     const leftWidth = usable - dateWidth;
-    const leftLines = split(safeLeft, leftWidth, 9.2, 'bold');
-    const leading = lineHeight(9.2);
+    const leftLines = split(safeLeft, leftWidth, 9.8, 'bold');
+    const leading = lineHeight(9.8);
     ensureSpace(Math.max(leftLines.length * leading, 5) + 3);
     leftLines.forEach((line, index) => {
-      setType(9.2, 'bold', COLOR.ink);
+      setType(9.8, 'bold', COLOR.ink);
       doc.text(line, PAGE.left, y + index * leading);
     });
     if (safeRight) {
@@ -146,25 +168,24 @@ export async function createResumePdfDocument(resume) {
     y += Math.max(leftLines.length * leading, leading) + 0.8;
   };
   const writeBullet = (text) => {
-    const lines = split(text, usable - 6, 8.65, 'normal');
+    const lines = split(text, usable - 6, 9.8, 'normal');
     if (!lines.length) return;
-    const leading = lineHeight(8.65);
+    const leading = lineHeight(9.8);
     ensureSpace(lines.length * leading + 1.2);
-    setType(8.65, 'bold', COLOR.ink);
+    setType(9.8, 'bold', COLOR.ink);
     doc.circle(PAGE.left + 1.1, y - 1.05, 0.45, 'F');
     lines.forEach((line, index) => {
-      setType(8.65, 'normal', COLOR.ink);
+      setType(9.8, 'normal', COLOR.ink);
       doc.text(line, PAGE.left + 4.2, y + index * leading);
     });
     y += lines.length * leading + 0.9;
   };
   const writeEntry = (item, type) => {
     const heading = type === 'experience'
-      ? [item.role, item.company].filter(Boolean).join(' - ')
+      ? [item.role, item.company].filter(Boolean).join(', ')
       : [projectDisplayName(item), projectDisplaySubtitle(item)].filter(Boolean).join(' - ');
     const dates = [item.startDate, item.endDate].filter(Boolean).join(' - ');
-    writeItemHeader(heading, dates);
-    if (item.location) writeParagraph(item.location, { size: 8.1, style: 'italic', color: COLOR.muted, gap: 0.8 });
+    writeItemHeader(heading, [dates, item.location].filter(Boolean).join(' | '));
     if (type === 'project' && item.link) writeParagraph(item.link, { size: 8.1, color: COLOR.muted, url: item.link, gap: 0.8 });
     (item.bullets || []).filter((bullet) => bullet.text).forEach((bullet) => writeBullet(bullet.text));
     y += 1.2;
@@ -172,22 +193,18 @@ export async function createResumePdfDocument(resume) {
 
   // Keep the export visually aligned with the clean, single-column live preview.
   y = PAGE.top + 2;
-  writeParagraph((resume.name || 'Your name').toUpperCase(), { size: 20.5, style: 'bold', gap: 0.4 });
-  if (resume.title) writeParagraph(resume.title, { size: 10.4, style: 'normal', gap: 1.2 });
+  writeParagraph((resume.name || 'Your name').toUpperCase(), { size: 18, style: 'bold', gap: 0.4 });
+  if (resume.title) writeParagraph(resume.title, { size: 10.5, style: 'bold', gap: 1.2 });
   const contact = [];
   if (resume.contact?.email) contact.push({ label: resume.contact.email, url: `mailto:${resume.contact.email}` });
   if (resume.contact?.phone) contact.push({ label: resume.contact.phone, url: `tel:${resume.contact.phone.replace(/\s/g, '')}` });
   if (resume.contact?.location) contact.push({ label: resume.contact.location, url: '' });
-  writeInlineLinks(contact, 8.1);
-  writeInlineLinks((resume.links || []).filter((link) => link.url).map((link) => ({ label: link.label || link.url, url: link.url })), 8.1);
-  const headerDividerY = y + 0.8;
-  doc.setDrawColor(...COLOR.rule);
-  doc.line(PAGE.left, headerDividerY, PAGE.width - PAGE.right, headerDividerY);
+  writeInlineLinks([...contact, ...(resume.links || []).filter((link) => link.url).map((link) => ({ label: link.label || link.url, url: link.url }))], 9);
   y += 2;
 
-  if (resume.summary) { section('Professional summary'); writeParagraph(resume.summary, { size: 9.15, gap: 0.8 }); }
+  if (resume.summary) { section('Professional summary'); writeParagraph(resume.summary, { size: 9.8, gap: 0.8 }); }
   if (resume.skillGroups?.length) { section('Skills'); resume.skillGroups.forEach(writeSkillGroup); }
-  if (resume.experience?.length) { section('Experience'); resume.experience.forEach((item) => writeEntry(item, 'experience')); }
+  if (resume.experience?.length) { section('Professional experience'); resume.experience.forEach((item) => writeEntry(item, 'experience')); }
   if (resume.projects?.length) { section(resume.projectSectionTitle || 'Projects'); resume.projects.forEach((item) => writeEntry(item, 'project')); }
   if (resume.education?.length) {
     section('Education');
@@ -199,7 +216,12 @@ export async function createResumePdfDocument(resume) {
   }
   if (resume.certifications?.length) {
     section('Certifications');
-    resume.certifications.forEach((item) => writeParagraph([item.name, item.issuer, item.date].filter(Boolean).join(' - '), { size: 8.65, gap: 0.8 }));
+    resume.certifications.forEach((item) => writeParagraph([item.name, item.issuer, item.date].filter(Boolean).join(' - '), { size: 9.8, gap: 0.8 }));
+  }
+
+  if (resume.languages?.some((value) => value.trim())) {
+    section('Languages');
+    writeParagraph(resume.languages.map((value) => value.trim()).filter(Boolean).join(', '), { size: 9.8, gap: 0.8 });
   }
 
   const pages = doc.getNumberOfPages();

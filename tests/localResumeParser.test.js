@@ -2,6 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { parseResumeLocally } from '../src/services/localResumeParser';
 
 describe('conservative fallback parsing', () => {
+  it('retains prose mistaken for a second employment location without exceeding metadata limits', () => {
+    const misplaced = 'The developer collaborated with product teams on accessible interfaces. '.repeat(12) + 'Preserve this final sentence.';
+    const result = parseResumeLocally(`Alex Morgan\nFrontend Engineer\nExperience\nEngineer | First Ltd | Kochi Jan 2020 - Dec 2021\n- Built web applications.\nDesigner\nSecond Ltd\n${misplaced}\nJan 2022 - Present\n- Built design systems.`);
+    expect(result.experience).toHaveLength(2);
+    expect(result.experience[1].location).toBe('');
+    expect(result.experience[1].role).toBe('Designer');
+    expect(result.experience[1].company).toBe('Second Ltd');
+    expect(result.ambiguities.join(' ')).toContain(misplaced);
+    expect(result.ambiguities.join(' ')).toContain('could not be identified as location');
+  });
+
   it('does not turn a flattened document into an oversized name', () => {
     const flattened = `MUHAMMED ASHIK A mail4ashh@gmail.com +91 8089911973 PROFESSIONAL SUMMARY UI/UX Designer with 6+ years of experience creating responsive products. CORE SKILLS Figma, user flows, design systems, React PROFESSIONAL EXPERIENCE Example Company UI/UX Designer Jul 2023 - Present ${'Designed accessible interfaces. '.repeat(30)}`;
     const result = parseResumeLocally(flattened);

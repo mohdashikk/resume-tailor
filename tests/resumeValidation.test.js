@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blankResume, normalizeResume, validateResume } from '../src/services/resumeValidation';
+import { blankResume, normalizeResume, validateResume, formatResumeError } from '../src/services/resumeValidation';
 
 describe('resume validation', () => {
   it('normalizes stable IDs and validates structured resume data', () => {
@@ -12,5 +12,18 @@ describe('resume validation', () => {
   it('rejects malformed nested data', () => {
     const value = blankResume(); value.contact = 'not-an-object';
     expect(validateResume(value).success).toBe(false);
+  });
+
+  it('turns nested validation errors into readable field guidance', () => {
+    const value = { ...blankResume(), experience: [
+      { id: 'one', role: 'Engineer', company: 'Acme', location: '', startDate: '', endDate: '', bullets: [] },
+      { id: 'two', role: 'Designer', company: 'Orbit', location: 'paragraph '.repeat(100), startDate: '', endDate: '', bullets: [] },
+    ] };
+    const result = validateResume(value);
+    expect(result.success).toBe(false);
+    const message = formatResumeError(result.error);
+    expect(message).toContain('experience / entry 2 / location');
+    expect(message).not.toContain('too_big');
+    expect(message).not.toContain('maximum');
   });
 });

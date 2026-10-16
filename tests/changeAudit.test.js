@@ -22,4 +22,12 @@ describe('tailoring edit history', () => {
     const master = blankResume();
     expect(buildChangeAudit(master, structuredClone(master), []).changes).toEqual([]);
   });
+
+  it('does not label JavaScript as introduced Java evidence', () => {
+    const master = blankResume();
+    const tailored = { ...master, summary: 'Built JavaScript applications with React.js.' };
+    const audit = buildChangeAudit(master, tailored, ['java', 'react']);
+    expect(audit.introducedTerms).toEqual(['react']);
+    expect(audit.changes[0].jdTerms).toEqual(['react']);
+  });
 });

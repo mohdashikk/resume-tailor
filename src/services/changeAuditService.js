@@ -1,10 +1,12 @@
+import { canonicalTerm, containsTerm, normalizeAliases, resumeEvidence } from './atsAnalysis.js';
+
 const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
 const same = (left, right) => clean(left) === clean(right);
 const emptyLabel = '(not present)';
 
 function keywordHits(text, keywords) {
-  const lower = clean(text).toLowerCase();
-  return keywords.filter((keyword) => lower.includes(keyword.toLowerCase()));
+  const lower = normalizeAliases(text);
+  return keywords.filter((keyword) => containsTerm(lower, canonicalTerm(keyword)));
 }
 
 function addChange(changes, location, before, after, keywords, target = null) {
@@ -14,7 +16,7 @@ function addChange(changes, location, before, after, keywords, target = null) {
     location,
     before: clean(before) || emptyLabel,
     after: clean(after) || emptyLabel,
-    jdTerms: keywordHits(after, keywords).filter((term) => !clean(before).toLowerCase().includes(term.toLowerCase())),
+    jdTerms: keywordHits(after, keywords).filter((term) => !keywordHits(before, [term]).length),
     target,
   });
 }
@@ -46,9 +48,7 @@ function compareEntries(changes, section, sectionKey, masterItems, tailoredItems
 
 export function buildChangeAudit(master, tailored, jdKeywords = []) {
   if (!master || !tailored) return { changes: [], introducedTerms: [] };
-  const masterText = JSON.stringify(master).toLowerCase();
-  const tailoredText = JSON.stringify(tailored).toLowerCase();
-  const introducedTerms = jdKeywords.filter((term) => !masterText.includes(term.toLowerCase()) && tailoredText.includes(term.toLowerCase()));
+  const introducedTerms = keywordHits(resumeEvidence(tailored), jdKeywords).filter((term) => !keywordHits(resumeEvidence(master), [term]).length);
   const changes = [];
 
   addChange(changes, 'Professional summary', master.summary, tailored.summary, jdKeywords, { type: 'rootField', field: 'summary' });

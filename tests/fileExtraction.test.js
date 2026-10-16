@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
-import { cleanOcrText, extractResumeText, pdfPageNeedsOcr } from '../src/services/fileExtraction';
+import { cleanOcrText, extractResumeText, pdfPageNeedsOcr, pdfItemsToText } from '../src/services/fileExtraction';
 
 vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({
   default: `file:///${process.cwd().replace(/\\/g, '/')}/node_modules/pdfjs-dist/build/pdf.worker.min.mjs`,
@@ -65,4 +65,27 @@ describe('browser document extraction', () => {
     expect(result.text).toContain('accessible mobile and web interfaces');
     expect(result.warnings.join(' ')).toContain('OCR');
   });
+});
+
+it('orders PDF text by position', () => {
+ const item = (str, x, y) => ({str, transform: [1,0,0,1,x,y]});
+ expect(pdfItemsToText([item('2024',400,700),item('Engineer',30,700),item('Alex',30,740)])).toBe('Alex\nEngineer 2024');
+});
+
+it('reads sidebar columns separately while preserving a full-width name and footer', () => {
+  const item = (str, x, y, width) => ({ str, width, transform: [1, 0, 0, 1, x, y] });
+  const items = [item('Alex Morgan - Frontend Engineer', 30, 780, 500)];
+  ['SKILLS', 'React, TypeScript', 'LANGUAGES', 'English, Malayalam'].forEach((str, i) => items.push(item(str, 30, 720 - i * 20, 140)));
+  ['EXPERIENCE - Frontend developer at Acme', 'Built accessible customer-facing applications.', 'Improved application performance and reliability.', 'Delivered reusable components across product teams.'].forEach((str, i) => items.push(item(str, 240, 720 - i * 20, 300)));
+  items.push(item('Footer spanning the complete document width', 30, 50, 500));
+  const text = pdfItemsToText(items.reverse());
+  expect(text.indexOf('English, Malayalam')).toBeLessThan(text.indexOf('EXPERIENCE'));
+  expect(text.startsWith('Alex Morgan')).toBe(true);
+  expect(text.endsWith('Footer spanning the complete document width')).toBe(true);
+});
+
+it('keeps right-aligned employment dates beside their roles', () => {
+  const item = (str, x, y, width) => ({ str, width, transform: [1, 0, 0, 1, x, y] });
+  const items = Array.from({ length: 4 }, (_, i) => [item(`Engineer at Company ${i}`, 30, 700 - i * 40, 180), item('Jan 2020 - Present', 400, 700 - i * 40, 100)]).flat();
+  expect(pdfItemsToText(items).split('\n').every((line) => /Engineer.*Present/.test(line))).toBe(true);
 });

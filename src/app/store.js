@@ -10,7 +10,7 @@ export function makeStore(storage) {
   const migratedLibrary = savedResumes.map((resume) => ({ resume, sourceName: loaded.data.sourceName || '', updatedAt: '', isMaster: resume.id === loaded.data?.masterResume?.id }));
   const resumeLibrary = loaded.data?.resumeLibrary?.length ? loaded.data.resumeLibrary : migratedLibrary;
   const preloadedState = loaded.data ? {
-    resume: { masterResume: loaded.data.masterResume || null, workingResume: loaded.data.workingResume || loaded.data.masterResume, workingSaved: false, resumeLibrary, extractedText: '', sourceName: loaded.data.sourceName || '', upload: { status: 'idle', progress: 0, message: '', error: '' } },
+    resume: { masterResume: loaded.data.masterResume || null, workingResume: loaded.data.workingResume || loaded.data.masterResume, workingSaved: Boolean(loaded.data.masterResume), resumeLibrary, extractedText: '', sourceName: loaded.data.sourceName || '', upload: { status: 'idle', progress: 0, message: '', error: '' } },
     job: loaded.data.job,
     tailoring: { current: loaded.data.current || null, versions: loaded.data.versions || [], status: 'idle', error: '' },
   } : undefined;

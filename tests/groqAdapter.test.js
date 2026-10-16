@@ -121,4 +121,20 @@ describe('Groq AI adapter', () => {
     expect(result.body.data.resume.skillGroups.flatMap((group) => group.skills)).not.toContain('Python');
     expect(result.body.data.changeSummary.some((item) => /skill/i.test(item))).toBe(true);
   });
+
+  it.each([{ requirements: [] }, { requirements: [{ term: 'React' }] }, null])('rejects invalid ATS output without returning a score: %j', async (output) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(output) } }] }) });
+    const result = await handleAIRequest({ action: 'ats', payload: { resume: parsedResume, jobDescription: 'Seeking a React frontend developer to build accessible interfaces and write unit tests with Jest.' } }, { GROQ_API_KEY: 'test-key' });
+    expect(result.status).toBe(422);
+    expect(result.body.data).toBeUndefined();
+    expect(result.body.error).toContain('retry');
+  });
+
+  it('rejects unsupported technologies introduced into tailored prose', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ resume: { ...parsedResume, summary: 'Expert in Jest' }, changeSummary: [], missingRequirements: [] }) } }] }) });
+    const result = await handleAIRequest({ action: 'tailor', payload: { masterResume: parsedResume, jobDescription: 'Seeking an experienced designer with Jest testing experience for our accessible digital product team.' } }, { GROQ_API_KEY: 'test-key' });
+    expect(result.status).toBe(502);
+    expect(result.body.data).toBeUndefined();
+    expect(result.body.error).toContain('unsupported jest');
+  });
 });
