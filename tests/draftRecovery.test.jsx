@@ -39,8 +39,9 @@ it('opens saved versions after refresh without ATS and shows actual skill reorde
     const nav = [...container.querySelectorAll('button')].find((b) => b.textContent.includes('Tailor & review'));
     expect(nav.disabled).toBe(false);
     await act(async () => nav.click());
-    expect(container.textContent).toContain('50%');
-    expect(container.textContent).toContain('Updated skills and ordering.');
+    expect(container.querySelector('[aria-label="Tailored ATS match"]').getAttribute('aria-valuenow')).toBe('50');
+    expect(container.querySelector('[aria-label="Tailored resume preview"]')).toBeTruthy();
+    expect(container.textContent).not.toContain('What changed');
     expect(container.textContent).not.toContain('Added missingRequirements');
     expect(store.getState().job.text).toBe(jd);
     expect(store.getState().resume.masterResume).toEqual(source);

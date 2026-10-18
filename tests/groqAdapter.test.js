@@ -9,7 +9,49 @@ const parsedResume = {
 };
 
 describe('Groq AI adapter', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
+  it('generates a validated editable cover letter from the selected resume and job', async () => {
+    const letter = 'Dear Hiring Team, I design accessible digital products and would welcome the opportunity to contribute to your team.';
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ text: letter }) } }] }) });
+    const jobDescription = 'We seek a product designer to create accessible digital products with our cross-functional engineering team.';
+    const result = await handleAIRequest({ action: 'coverLetter', payload: { resume: parsedResume, jobDescription } }, { GROQ_API_KEY: 'cover-letter-test' });
+    expect(result.status).toBe(200);
+    expect(result.body.data.text).toBe(letter);
+    expect(JSON.parse(fetch.mock.calls[0][1].body).messages[1].content).toContain('Asha Rao');
+  });
+
+  it('falls back immediately, skips cooling models, and restores the primary after cooldown', async () => {
+    vi.useFakeTimers();
+    const success = { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(parsedResume) } }] }) };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({ ok: false, status: 429, headers: { get: () => '13' }, json: async () => ({ error: { message: 'Rate limited' } }) })
+      .mockResolvedValue(success);
+    const env = { GROQ_API_KEY: 'fallback-test-key' };
+    const input = { action: 'parse', payload: { rawText: 'Asha Rao\nProduct Designer\n'.padEnd(80, 'x') } };
+    expect((await handleAIRequest(input, env)).status).toBe(200);
+    expect((await handleAIRequest(input, env)).status).toBe(200);
+    expect(fetchMock.mock.calls.map(([, request]) => JSON.parse(request.body).model)).toEqual([
+      'openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'openai/gpt-oss-120b',
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).response_format.json_schema.strict).toBe(true);
+    await vi.advanceTimersByTimeAsync(13_000);
+    expect((await handleAIRequest(input, env)).status).toBe(200);
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body).model).toBe('openai/gpt-oss-20b');
+  });
+
+  it('returns the shortest cooldown when both models are limited and avoids more calls during cooldown', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({ ok: false, status: 429, headers: { get: () => '60' }, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: false, status: 429, headers: { get: () => '30' }, json: async () => ({}) });
+    const input = { action: 'parse', payload: { rawText: 'Asha Rao\nProduct Designer\n'.padEnd(80, 'x') } };
+    const env = { GROQ_API_KEY: 'both-limited-test-key' };
+    const result = await handleAIRequest(input, env);
+    expect(result.status).toBe(429);
+    expect(result.body.code).toBe('AI_RATE_LIMITED');
+    expect(result.body.error).toContain('30 seconds');
+    expect((await handleAIRequest(input, env)).status).toBe(429);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 
   it('reports the Groq environment variable when configuration is missing', async () => {
     const result = await handleAIRequest({ action: 'parse', payload: { rawText: 'x'.repeat(80) } }, {});
@@ -52,7 +94,7 @@ describe('Groq AI adapter', () => {
 
     const result = await handleAIRequest(
       { action: 'parse', payload: { rawText: 'Asha Rao\nProduct Designer\n'.padEnd(80, 'x') } },
-      { GROQ_API_KEY: 'test-key' },
+      { GROQ_API_KEY: 'retry-test-key', GROQ_FALLBACK_MODEL: '' },
     );
 
     expect(result.status).toBe(200);
@@ -117,7 +159,7 @@ describe('Groq AI adapter', () => {
     }, { GROQ_API_KEY: 'test-key' });
 
     expect(result.status).toBe(200);
-    expect(result.body.data.resume.skillGroups.map((group) => group.id)).toEqual(['frontend', 'design']);
+    expect(result.body.data.resume.skillGroups.map((group) => group.name)).toEqual(['Design & UX', 'Frontend', 'Styling & UI']);
     expect(result.body.data.resume.skillGroups.flatMap((group) => group.skills)).not.toContain('Python');
     expect(result.body.data.changeSummary.some((item) => /skill/i.test(item))).toBe(true);
   });
@@ -130,11 +172,12 @@ describe('Groq AI adapter', () => {
     expect(result.body.error).toContain('retry');
   });
 
-  it('rejects unsupported technologies introduced into tailored prose', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ resume: { ...parsedResume, summary: 'Expert in Jest' }, changeSummary: [], missingRequirements: [] }) } }] }) });
+  it('keeps summary and skips the provider when there are no relevant source bullets', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
     const result = await handleAIRequest({ action: 'tailor', payload: { masterResume: parsedResume, jobDescription: 'Seeking an experienced designer with Jest testing experience for our accessible digital product team.' } }, { GROQ_API_KEY: 'test-key' });
-    expect(result.status).toBe(502);
-    expect(result.body.data).toBeUndefined();
-    expect(result.body.error).toContain('unsupported jest');
+    expect(result.status).toBe(200);
+    expect(result.body.data.resume.summary).toBe(parsedResume.summary);
+    expect(result.body.data.matchComparison.status).toBe('local');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

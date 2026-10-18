@@ -2,19 +2,19 @@ import { useEffect, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import ResumeEditor from './components/ResumeEditor';
 import ResumePreview from './components/ResumePreview';
-import ChangeAudit from './components/ChangeAudit';
+import TailorOverview from './components/TailorOverview';
 import { resumeActions } from './features/resume/resumeSlice';
 import { jobActions } from './features/jobDescription/jobSlice';
 import { tailoringActions } from './features/tailoring/tailoringSlice';
 import { extractResumeText } from './services/fileExtraction';
 import { analyzeAtsWithAI, parseResumeWithAI, tailorResumeWithAI } from './services/aiService';
+import { analyzeAtsLocally } from './services/localAtsService';
 import { parseResumeLocally } from './services/localResumeParser';
 import { prepareUploadedResume } from './services/resumeParsingService';
-import { analysisKey, readCachedAnalysis, validateAnalysis } from './services/atsAnalysis';
+import { analysisKey, readCachedAnalysis, validateAnalysis, rescoreAnalysis } from './services/atsAnalysis';
 import { tailoredResultSchema, validateResume, formatResumeError } from './services/resumeValidation';
 import { downloadResumePdf } from './services/pdfService';
 import { exportBackup, importBackup, STORAGE_KEY } from './services/storageService';
-import { buildChangeAudit } from './services/changeAuditService';
 import styles from './App.module.css';
 
 const editorSections = [['personal', 'Personal info'], ['skills', 'Skills'], ['experience', 'Experience'], ['projects', 'Projects'], ['education', 'Education'], ['more', 'Certs & more']];
@@ -46,6 +46,12 @@ export default function App({ recovered = false }) {
   const job = useSelector((state) => state.job);
   const tailoring = useSelector((state) => state.tailoring);
   const [stage, setStage] = useState(1);
+  const [previewSource, setPreviewSource] = useState(false);
+  const [retailoring, setRetailoring] = useState(false);
+  const [retailorError, setRetailorError] = useState('');
+  const currentTailoringKey = useRef('');
+  currentTailoringKey.current = tailoring.current ? analysisKey(tailoring.current.resume, job.text) : '';
+  const generationRequest = useRef(0);
   const [atsChecked, setAtsChecked] = useState(false);
   const [atsLoading, setAtsLoading] = useState(false);
   const [atsError, setAtsError] = useState('');
@@ -60,22 +66,32 @@ export default function App({ recovered = false }) {
   const uploadRequest = useRef(0);
   const atsResumeOptions = [...resume.resumeLibrary];
   if (resume.masterResume && !atsResumeOptions.some((entry) => entry.resume.id === resume.masterResume.id)) atsResumeOptions.unshift({ resume: resume.masterResume, sourceName: 'Master resume', isMaster: true });
-  const atsResume = atsResumeOptions.find((entry) => entry.resume.id === selectedAtsResumeId)?.resume || resume.masterResume || resume.workingResume;
+  if (resume.workingResume?.name && !atsResumeOptions.some(entry => entry.resume.id === resume.workingResume.id)) atsResumeOptions.unshift({ resume: resume.workingResume, sourceName: resume.sourceName || 'Current resume' });
+  for (const version of tailoring.versions) if (!atsResumeOptions.some(entry => entry.resume.id === version.resume.id)) atsResumeOptions.push({ resume: version.resume, sourceName: version.jobTitle || 'Tailored version' });
+  const atsResume = selectedAtsResumeId === resume.workingResume?.id ? resume.workingResume : atsResumeOptions.find((entry) => entry.resume.id === selectedAtsResumeId)?.resume || resume.workingResume || resume.masterResume;
+  const atsSourceName = atsResumeOptions.find(entry => entry.resume.id === atsResume?.id)?.sourceName || 'Current resume';
   let draftAnalysis = null;
   if (stage === 4 && tailoring.current?.sourceResume) {
     try { draftAnalysis = validateAnalysis(tailoring.current.analysis, tailoring.current.sourceResume, tailoring.current.jobDescription); } catch { /* Legacy drafts have no trustworthy analysis. */ }
   }
   const displayedAnalysis = stage === 4 && tailoring.current ? draftAnalysis : (aiAtsReview?.key === analysisKey(atsResume, job.text) ? aiAtsReview : null);
-  const match = displayedAnalysis?.match || { keywords: [], matched: [], missing: [], uncertain: [], coverage: null };
+  let match = displayedAnalysis?.match || { keywords: [], matched: [], missing: [], uncertain: [], coverage: null };
   const activeAnalysisKey = analysisKey(atsResume, job.text);
   const requestKey = useRef(activeAnalysisKey);
+  const atsRequest = useRef(0);
   requestKey.current = activeAnalysisKey;
   useEffect(() => {
     const cached = readCachedAnalysis(atsResume, job.text);
     setAiAtsReview(cached); setAtsChecked(Boolean(cached));
   }, [activeAnalysisKey]);
-  const draftChanges = tailoring.current?.sourceResume ? buildChangeAudit(tailoring.current.sourceResume, tailoring.current.resume).changes.map((change) => 'Updated ' + change.location.toLowerCase() + '.') : [];
+  let tailoredMatch = null;
+  if (tailoring.current && (draftAnalysis || job.text.trim().length >= 80)) {
+    try { tailoredMatch = draftAnalysis ? rescoreAnalysis(draftAnalysis, tailoring.current.resume, job.text) : analyzeAtsLocally(tailoring.current.resume, job.text); } catch { /* Older drafts may lack sufficient posting text. */ }
+  }
+  if (stage === 4 && tailoredMatch) match = tailoredMatch.match;
   const openDraft = (draft) => {
+    generationRequest.current += 1;
+    setPreviewSource(false);
     dispatch(tailoringActions.loadVersion(draft));
     dispatch(jobActions.hydrateJob({ company: draft.company || '', jobTitle: draft.jobTitle || '', text: draft.jobDescription || '' }));
     setStage(4);
@@ -92,9 +108,11 @@ export default function App({ recovered = false }) {
   }, [activePreviewSectionCount, editorSection, mobileView, stage]);
 
   const parseText = async (text, sourceName = 'Pasted text', request = ++uploadRequest.current) => {
+    atsRequest.current += 1; generationRequest.current += 1;
+    setAtsLoading(false); setAtsChecked(false); setAiAtsReview(null); setAtsError('');
     dispatch(tailoringActions.clearCurrent());
     dispatch(resumeActions.setExtractedText(text)); dispatch(resumeActions.setSourceName(sourceName));
-    dispatch(resumeActions.setUploadStatus({ status: 'parsing', progress: 78, message: 'Structuring resume with AI…', error: '' }));
+    dispatch(resumeActions.setUploadStatus({ status: 'parsing', progress: 78, message: 'Reading resume sections…', error: '' }));
     let parsedResume;
     try {
       parsedResume = prepareUploadedResume(await parseResumeWithAI(text));
@@ -114,12 +132,15 @@ export default function App({ recovered = false }) {
     }
     dispatch(resumeActions.setExtractedText(text)); dispatch(resumeActions.setSourceName(sourceName));
     dispatch(resumeActions.upsertResumeLibrary({ resume: parsedResume, sourceName, updatedAt: new Date().toISOString(), isMaster: false }));
+    setSelectedAtsResumeId(parsedResume.id);
     setEditorSection('personal'); setMobileView('editor');
     setStage(2); window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleFile = async (file) => {
     if (!file) return;
+    atsRequest.current += 1; generationRequest.current += 1;
+    setAtsLoading(false); setAtsChecked(false); setAiAtsReview(null); setAtsError('');
     const request = ++uploadRequest.current;
     dispatch(resumeActions.setUploadStatus({ status: 'extracting', progress: 5, message: 'Reading file…', error: '' }));
     try {
@@ -150,29 +171,41 @@ export default function App({ recovered = false }) {
     if (!atsChecked || !displayedAnalysis) return setNotice('Check the ATS match before tailoring your resume.');
     if (!atsResume) return setNotice('Choose a saved resume first.');
     if (job.text.trim().length < 80) return dispatch(tailoringActions.setTailoringStatus({ status: 'failed', error: 'Paste a fuller job description (at least 80 characters).' }));
+    const request = ++generationRequest.current;
+    const source = structuredClone(atsResume), description = job.text, sourceAnalysis = displayedAnalysis;
+    setPreviewSource(false);
     dispatch(tailoringActions.clearCurrent());
     dispatch(tailoringActions.setTailoringStatus({ status: 'loading', error: '' }));
+    setStage(4);
     try {
-      const candidate = await tailorResumeWithAI(atsResume, job.text, job.company, job.jobTitle, displayedAnalysis);
+      const candidate = await tailorResumeWithAI(atsResume, job.text, job.company, job.jobTitle, displayedAnalysis, { verifiedCareerProfile: resume.masterResume || undefined });
+      if (request !== generationRequest.current || analysisKey(source, description) !== requestKey.current) return;
       const validated = tailoredResultSchema.safeParse(candidate);
       if (!validated.success) throw new Error('The AI returned malformed resume data. Your master resume was not changed.');
-      dispatch(tailoringActions.setTailoredResult({ ...validated.data, analysis: aiAtsReview, jobDescription: job.text, sourceResume: structuredClone(atsResume), missingRequirements: [...match.missing, ...match.uncertain] })); setStage(4); window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (error) { dispatch(tailoringActions.setTailoringStatus({ status: 'failed', error: formatResumeError(error) })); }
+      dispatch(tailoringActions.setTailoredResult({ ...validated.data, analysis: sourceAnalysis, jobDescription: description, sourceResume: source })); setStage(4); window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (validated.data.matchComparison?.status === 'unavailable' || validated.data.tailoringReport?.roles.some(role => role.validation_failures.length)) setNotice('Some experience wording was retained because AI rewriting was unavailable or could not be verified. Review before exporting.');
+    } catch (error) { if (request === generationRequest.current) dispatch(tailoringActions.setTailoringStatus({ status: 'failed', error: formatResumeError(error) })); }
   };
 
-  const saveVersion = () => {
-    if (!tailoring.current) return;
-    dispatch(tailoringActions.saveVersion({ ...structuredClone(tailoring.current), id: crypto.randomUUID(), company: job.company, jobTitle: job.jobTitle, jobDescription: job.text, createdAt: new Date().toISOString() }));
-    setNotice('Tailored version saved locally.');
+  const retailor = async (confirmedSkills = []) => {
+    if (!tailoring.current || retailoring) return;
+    const request = ++generationRequest.current;
+    const source = structuredClone(tailoring.current.resume), description = job.text;
+    const key = analysisKey(source, description);
+    setRetailoring(true); setRetailorError('');
+    try {
+      const analysis = draftAnalysis ? rescoreAnalysis(draftAnalysis, source, description) : await analyzeAtsWithAI(source, description, { force: true, useAI: true });
+      if (request !== generationRequest.current || key !== currentTailoringKey.current) return;
+      const result = tailoredResultSchema.parse(await tailorResumeWithAI(source, description, job.company, job.jobTitle, analysis, { force: true, confirmedSkills, verifiedCareerProfile: resume.masterResume || undefined }));
+      if (request !== generationRequest.current || key !== currentTailoringKey.current) return;
+      dispatch(tailoringActions.setTailoredResult({ ...result, sourceResume: source, analysis, jobDescription: description }));
+      setPreviewSource(false);
+      const updates = [result.resume.summary !== source.summary ? 'summary' : '', JSON.stringify(result.resume.skillGroups) !== JSON.stringify(source.skillGroups) ? 'skills' : '', result.matchComparison?.changedBullets ? `${result.matchComparison.changedBullets} experience/project bullets` : ''].filter(Boolean);
+      const needsReview = result.matchComparison?.status === 'unavailable' || result.tailoringReport?.roles.some(role => role.validation_failures.length);
+      setNotice(needsReview ? 'Some experience wording was retained because AI rewriting was unavailable or could not be verified. Review before exporting.' : updates.length ? `Current resume updated: ${updates.join(', ')}. ATS match recalculated.` : 'Rewrite completed. No supported content changes were needed.');
+    } catch (error) { if (request === generationRequest.current && key === currentTailoringKey.current) setRetailorError(formatResumeError(error)); }
+    finally { setRetailoring(false); }
   };
-
-  const addMissingRequirement = (requirement) => {
-    const skill = window.prompt('Confirm that you have this skill, then edit the wording if needed before adding it to the resume:', requirement);
-    if (!skill?.trim()) return;
-    dispatch(tailoringActions.confirmMissingRequirement({ requirement, skill: skill.trim() }));
-    setNotice(`Added “${skill.trim()}” to the tailored resume skills. Your master resume was not changed.`);
-  };
-
   const stateForBackup = { masterResume: resume.masterResume, workingResume: resume.workingResume, resumeLibrary: resume.resumeLibrary, sourceName: resume.sourceName, job, current: tailoring.current, versions: tailoring.versions };
   const restoreBackup = async (file) => {
     try { const data = await importBackup(file); dispatch(resumeActions.hydrateResume({ masterResume: data.masterResume, workingResume: data.workingResume, resumeLibrary: data.resumeLibrary || (data.masterResume ? [{ resume: data.masterResume, sourceName: data.sourceName || '', updatedAt: '', isMaster: true }] : []), workingSaved: false, sourceName: data.sourceName })); dispatch(jobActions.hydrateJob(data.job || {})); dispatch(tailoringActions.hydrateTailoring({ current: data.current, versions: data.versions })); setSelectedAtsResumeId(data.masterResume?.id || ''); setAtsChecked(false); setAiAtsReview(null); setAtsError(''); setNotice('Backup imported.'); }
@@ -180,21 +213,31 @@ export default function App({ recovered = false }) {
   };
   const clearAll = () => { if (!window.confirm('Clear the master resume, job description, and all saved versions from this browser?')) return; uploadRequest.current += 1; localStorage.removeItem(STORAGE_KEY); dispatch(resumeActions.clearResume()); dispatch(jobActions.clearJob()); dispatch(tailoringActions.clearTailoring()); setSelectedAtsResumeId(''); setAtsChecked(false); setAiAtsReview(null); setAtsError(''); setStage(1); setNotice('Saved data cleared.'); };
 
-  const selectResume = (entry) => { uploadRequest.current += 1; dispatch(resumeActions.loadResumeFromLibrary(entry)); dispatch(tailoringActions.clearCurrent()); setAtsChecked(false); setAiAtsReview(null); setAtsError(''); setStage(2); window.scrollTo({ top: 0, behavior: 'smooth' }); };
-  const updateJob = (changes) => { dispatch(jobActions.updateJob(changes)); dispatch(tailoringActions.clearCurrent()); setAtsChecked(false); setAiAtsReview(null); setAtsError(''); };
+  const selectResume = (entry) => { atsRequest.current += 1; setAtsLoading(false); setSelectedAtsResumeId(entry.resume.id); uploadRequest.current += 1; dispatch(resumeActions.loadResumeFromLibrary(entry)); dispatch(tailoringActions.clearCurrent()); setAtsChecked(false); setAiAtsReview(null); setAtsError(''); setStage(2); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const updateJob = (changes) => { generationRequest.current += 1; dispatch(jobActions.updateJob(changes)); dispatch(tailoringActions.clearCurrent()); setAtsChecked(false); setAiAtsReview(null); setAtsError(''); };
   const runAtsCheck = async () => {
     if (!atsResume || job.text.trim().length < 80) return;
+    const request = ++atsRequest.current;
+    const key = activeAnalysisKey;
     setAtsLoading(true); setAtsChecked(false); setAtsError(''); setAiAtsReview(null); dispatch(tailoringActions.clearCurrent());
     try {
-      const review = await analyzeAtsWithAI(atsResume, job.text);
-      if (review.key === requestKey.current) { setAiAtsReview(review); setAtsChecked(true); }
+      const review = await analyzeAtsWithAI(atsResume, job.text, { force: true, useAI: true });
+      if (request === atsRequest.current && review.key === requestKey.current) { setAiAtsReview(review); setAtsChecked(true); }
     } catch (error) {
-      setAtsError(error.message || 'The AI ATS review could not be completed. Please try again.');
-    } finally { setAtsLoading(false); }
+      if (request === atsRequest.current && key === requestKey.current) setAtsError(error.message || 'The job match could not be completed. Please check the job description.');
+    } finally { if (request === atsRequest.current) setAtsLoading(false); }
   };
 
   const viewToggle = <div className={styles.viewToggle} aria-label="Choose mobile view"><button className={mobileView === 'editor' ? styles.active : ''} onClick={() => setMobileView('editor')}>Editor</button><button className={mobileView === 'preview' ? styles.active : ''} onClick={() => setMobileView('preview')}>Preview</button></div>;
-  const exportTailoredResume = () => tailoring.current && downloadResumePdf(tailoring.current.resume, `${job.company || 'tailored'}-${job.jobTitle || 'resume'}.pdf`);
+  const exportTailoredResume = async () => {
+    if (!tailoring.current) return;
+    try {
+      await downloadResumePdf(tailoring.current.resume, `${job.company || 'tailored'}-${job.jobTitle || 'resume'}.pdf`, { keywords: match.matched });
+    } catch {
+      if (import.meta.env.DEV) console.warn('[resume-ai]', JSON.stringify({ stage: 'document_rendering', event: 'failed' }));
+      setNotice('PDF export failed while rendering the document. Your saved resume was not changed. Please retry.');
+    }
+  };
 
   return <div className={styles.app}>
     <aside className={styles.sidebar}>
@@ -206,7 +249,7 @@ export default function App({ recovered = false }) {
       <nav className={styles.sideNav} aria-label="Primary navigation">
         <button className={stage === 1 ? styles.sideActive : ''} onClick={() => setStage(1)}><NavIcon name="resume" />My resumes</button>
         <button className={stage === 2 ? styles.sideActive : ''} disabled={!resume.workingResume?.name && !resume.sourceName} onClick={() => setStage(2)}><NavIcon name="tailor" />Edit resume</button>
-        <button className={stage === 3 ? styles.sideActive : ''} disabled={!resume.workingSaved} onClick={() => setStage(3)}><NavIcon name="history" />Check ATS</button>
+        <button className={stage === 3 ? styles.sideActive : ''} disabled={!atsResume?.name} onClick={() => setStage(3)}><NavIcon name="history" />Check ATS</button>
         <button className={stage === 4 ? styles.sideActive : ''} disabled={!tailoring.current && !tailoring.versions.length && !atsChecked} onClick={() => { if (tailoring.current) openDraft(tailoring.current); else if (tailoring.versions.length) openDraft(tailoring.versions[0]); else setStage(4); }}><NavIcon name="tailor" />Tailor & review{tailoring.versions.length > 0 && <em>{tailoring.versions.length}</em>}</button>
       </nav>
       <div className={styles.sidebarTools}>
@@ -228,7 +271,7 @@ export default function App({ recovered = false }) {
           <div className={styles.uploadBox} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]); }}><div className={styles.uploadIcon}>↥</div><div className={styles.uploadCopy}><h3>Upload existing resume</h3><p>PDF, DOCX, TXT, or image · up to 10 MB</p></div><button className={styles.primary} onClick={() => fileRef.current?.click()}>Choose file</button><input hidden ref={fileRef} type="file" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,image/png,image/jpeg,image/webp" onChange={(e) => { const file = e.target.files[0]; e.target.value = ''; handleFile(file); }} /></div>
           <details className={styles.pasteFallback}><summary>Paste resume text</summary><textarea rows="5" value={resume.extractedText} onChange={(e) => dispatch(resumeActions.setExtractedText(e.target.value))} placeholder="Paste all resume text here…" /><button className={styles.secondary} disabled={resume.extractedText.trim().length < 40} onClick={() => parseText(resume.extractedText)}>Parse pasted text</button></details>
         </div>
-        {(resume.upload.status !== 'idle') && <div className={styles.progressWrap}><div className={styles.progressLabel}><span>{resume.upload.message || (resume.upload.status === 'error' ? 'Could not process file' : 'Ready to review')}</span><strong>{resume.upload.progress}%</strong></div><div className={styles.progress}><span style={{ width: `${resume.upload.progress}%` }} /></div>{resume.upload.error && <Status type="error">{resume.upload.error} {resume.extractedText && <button className={styles.inlineButton} onClick={() => parseText(resume.extractedText, resume.sourceName)}>Retry AI parsing</button>}</Status>}</div>}
+        {(resume.upload.status !== 'idle') && <div className={styles.progressWrap}><div className={styles.progressLabel}><span>{resume.upload.message || (resume.upload.status === 'error' ? 'Could not process file' : 'Ready to review')}</span><strong>{resume.upload.progress}%</strong></div><div className={styles.progress}><span style={{ width: `${resume.upload.progress}%` }} /></div>{resume.upload.error && <Status type="error">{resume.upload.error} {resume.extractedText && <button className={styles.inlineButton} onClick={() => parseText(resume.extractedText, resume.sourceName)}>Retry parsing</button>}</Status>}</div>}
         {resume.workingResume?.name && <button type="button" className={styles.continueResume} onClick={() => setStage(2)}><span><strong>Continue editing</strong><small>{resume.workingResume.name}{resume.sourceName ? ` · ${resume.sourceName}` : ''}</small></span><span>Open editor →</span></button>}
         <section className={styles.librarySection}><div className={styles.libraryHeading}><div><h3>All resumes</h3><p>Stored in this browser. Select one to review and edit.</p></div></div>{resume.resumeLibrary.length ? <div className={styles.resumeLibraryGrid}>{resume.resumeLibrary.map((entry) => <button type="button" className={styles.resumeLibraryCard} key={entry.resume.id} onClick={() => entry.resume.id === resume.workingResume?.id && !resume.workingSaved ? setStage(2) : selectResume(entry)}><span className={styles.resumeFileIcon}>PDF</span><span className={styles.resumeCardCopy}><strong>{entry.resume.name || 'Untitled resume'}</strong><small>{entry.resume.title || entry.sourceName || 'Resume'}{entry.isMaster ? ' · Current master' : ''}</small><small>{entry.sourceName || 'Pasted resume'}{entry.updatedAt ? ` · ${new Date(entry.updatedAt).toLocaleDateString()}` : ''}</small></span><span className={styles.resumeCardAction}>Review →</span></button>)}</div> : <div className={styles.emptyLibrary}>No resumes yet. Upload a file or paste resume text to get started.</div>}</section>
       </section>}
@@ -258,19 +301,22 @@ export default function App({ recovered = false }) {
               <h3>Your ATS score will appear here</h3>
               <p>Choose a resume, paste a job description, and run the check to see your match and missing keywords.</p>
             </div> : <>
-            <div className={styles.reportTitle}><span className={styles.eyebrow}>AI ATS REVIEW</span><small>{atsResume.name || atsResume.title || 'Selected resume'}</small></div>
+            <div className={styles.reportTitle}><span className={styles.eyebrow}>RESUME MATCH REVIEW</span><small>{atsResume.name || atsResume.title || 'Selected resume'}</small></div>
             <div className={styles.score}>{atsLoading ? <span className={styles.scoreLoading}>···</span> : atsChecked ? aiAtsReview.score : '—'}<small>/100</small></div>
             <h3>ATS match score</h3>
-            <p>{atsChecked ? aiAtsReview.summary : 'AI review of keyword alignment, experience evidence, and ATS readability.'}</p>
-            <div className={styles.scoreBreakdown}><div><span>JD keyword match</span><strong>{atsChecked && match.keywords.length > 0 ? `${match.coverage}%` : '—'}</strong></div><div><span>Assessment</span><strong>AI estimate</strong></div></div>
+            <p>Checked document: <strong>{atsSourceName}</strong></p>
+            <p>{aiAtsReview.method === 'ai' ? 'AI requirement analysis · evidence-validated score' : 'Local keyword analysis'}{aiAtsReview.warning ? ` · ${aiAtsReview.warning}` : ''}</p>
+            <p role="status">Check complete · {aiAtsReview.requirements.length} requirements compared with {atsResume.name || 'your selected resume'}.</p>
+            <p>{atsChecked ? aiAtsReview.summary : 'Local review of job requirements and resume evidence.'}</p>
+            <div className={styles.scoreBreakdown}><div><span>JD keyword match</span><strong>{atsChecked && match.keywords.length > 0 ? `${match.coverage}%` : '—'}</strong></div><div><span>Assessment</span><strong>App estimate</strong></div></div>
             <div className={styles.keywordColumns}>
               <div className={styles.termGroup}><strong>Matched keywords</strong><div>{atsChecked ? match.matched.map((term) => <span className={styles.match} key={term}>{term}</span>) : <em>—</em>}</div></div>
               <div className={styles.termGroup}><strong>Missing keywords</strong><div>{atsChecked ? match.missing.map((term) => <span className={styles.missing} key={term}>{term}</span>) : <em>—</em>}</div></div>
             </div>
-            <div className={styles.termGroup}><strong>Needs review</strong><div>{match.uncertain.map((term) => <span className={styles.missing} key={term}>{term}</span>)}</div></div><details><summary>Score calculation and resume evidence</summary><p>{aiAtsReview.rubric.earnedWeight} of {aiAtsReview.rubric.totalWeight} weighted points. Required qualifications: 2 points; preferred: 1. Only supported requirements earn points.</p>{aiAtsReview.requirements.map((r) => <p key={r.term}><strong>{r.term}</strong> · {r.priority} · {r.status === 'matched' ? 'Supported' : r.status === 'missing' ? 'No evidence' : 'Needs review'}<br />Job posting: {r.source}<br />Resume: {r.evidence.join(' / ') || 'No supporting evidence found.'}</p>)}</details><small className={styles.scoreNote}>AI estimate for guidance—not an employer ATS score or a hiring prediction.</small>
+            <div className={styles.termGroup}><strong>Needs review</strong><div>{match.uncertain.map((term) => <span className={styles.missing} key={term}>{term}</span>)}</div></div><details><summary>Score calculation and resume evidence</summary><p>{aiAtsReview.rubric.earnedWeight} of {aiAtsReview.rubric.totalWeight} weighted points. Required qualifications: 3 points; preferred: 1. Only supported requirements earn points.</p>{aiAtsReview.requirements.map((r) => <p key={r.term}><strong>{r.term}</strong> · {r.priority} · {r.status === 'matched' ? 'Supported' : r.status === 'missing' ? 'No evidence' : 'Needs review'}<br />Job posting: {r.source}<br />Resume: {r.evidence.join(' / ') || 'No supporting evidence found.'}</p>)}</details><small className={styles.scoreNote}>App estimate for guidance—not an employer ATS score or a hiring prediction.</small>
             </>}
           </aside>
-          {atsChecked && <div className={`${styles.generateBar} ${styles.atsTailorBar}`}><div><strong>{match.missing.length ? 'Want a higher score?' : 'Make this resume job ready'}</strong><span>{aiAtsReview.nextSteps?.[0] || 'Tailor a copy using your existing experience.'}</span></div><button className={styles.primary} onClick={() => { dispatch(tailoringActions.clearCurrent()); setStage(4); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Tailor for this job →</button></div>}
+          {atsChecked && <div className={`${styles.generateBar} ${styles.atsTailorBar}`}><div><strong>{match.missing.length ? 'Want a higher score?' : 'Make this resume job ready'}</strong><span>{aiAtsReview.nextSteps?.[0] || 'Tailor a copy using your existing experience.'}</span></div><button className={styles.primary} onClick={generate}>Tailor for this job →</button></div>}
           </div>
         </div>
         {tailoring.error && <Status type="error">{tailoring.error}</Status>}
@@ -283,7 +329,7 @@ export default function App({ recovered = false }) {
             <div className={styles.tailorSource}><div><span className={styles.eyebrow}>JOB DESCRIPTION</span><strong>{job.jobTitle || 'Job description ready'}</strong><small>{job.text.length.toLocaleString()} characters provided</small></div><button type="button" className={styles.textAction} onClick={() => { setStage(3); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Edit job →</button></div>
             <section className={styles.tailorMatchPanel}>
               <div className={styles.tailorMatchHeading}><div><span className={styles.eyebrow}>BEFORE TAILORING</span><h3>Your match at a glance</h3></div><span className={styles.tailorScore}>{aiAtsReview?.score ?? '—'}<small>/100</small></span></div>
-              <div className={styles.tailorScoreTrack} role="meter" aria-label="AI ATS estimate" aria-valuemin="0" aria-valuemax="100" aria-valuenow={aiAtsReview?.score ?? 0}><span style={{ width: `${aiAtsReview?.score ?? 0}%` }} /></div>
+              <div className={styles.tailorScoreTrack} role="meter" aria-label="Resume match estimate" aria-valuemin="0" aria-valuemax="100" aria-valuenow={aiAtsReview?.score ?? 0}><span style={{ width: `${aiAtsReview?.score ?? 0}%` }} /></div>
               <p className={styles.tailorSummary}>{aiAtsReview?.summary || 'Review the job match before tailoring.'}</p>
               <div className={styles.tailorTerms}><h4>Already represented <span>{match.matched.length}</span></h4><div>{match.matched.length ? match.matched.map((term) => <span className={styles.match} key={term}>{term}</span>) : <small>No exact keyword matches found.</small>}</div></div>
               <div className={styles.tailorTerms}><h4>Needs attention <span>{match.missing.length + match.uncertain.length}</span></h4><div>{match.missing.length + match.uncertain.length ? [...match.missing, ...match.uncertain].map((term) => <span className={styles.missing} key={term}>{term}</span>) : <small>No missing keywords found.</small>}</div></div>
@@ -292,27 +338,17 @@ export default function App({ recovered = false }) {
               {tailoring.error && <Status type="error">{tailoring.error}</Status>}
             </section>
           </div>
-          <aside className={`${styles.previewPane} ${styles.tailorPreview}`}><div className={styles.previewHeader}><div><h3>{tailoring.status === 'loading' ? 'Creating tailored resume' : 'Base resume preview'}</h3><span>{tailoring.status === 'loading' ? 'AI is preparing the result.' : 'This version will not be changed.'}</span></div></div>{tailoring.status === 'loading' && <div className={styles.aiPreviewOverlay}><AiLoading title="Building your tailored resume" message="Strengthening relevant experience while preserving the facts in your base resume." steps={['Mapping job priorities', 'Rewriting with evidence', 'Validating final resume']} /></div>}<div className={tailoring.status === 'loading' ? styles.previewProcessing : ''}><ResumePreview resume={atsResume} label="Base resume preview" /></div></aside>
+          <aside className={`${styles.previewPane} ${styles.tailorPreview}`}><div className={styles.previewHeader}><div><h3>{tailoring.status === 'loading' ? 'Creating tailored resume' : 'Base resume preview'}</h3><span>{tailoring.status === 'loading' ? 'AI is preparing the result.' : 'This version will not be changed.'}</span></div></div>{tailoring.status === 'loading' && <div className={styles.aiPreviewOverlay}><AiLoading title="Building your tailored resume" message="Editing selected source-backed bullets within a 15-second AI budget." steps={['Selecting relevant bullets', 'Editing descriptions', 'Checking facts locally']} /></div>}<div className={tailoring.status === 'loading' ? styles.previewProcessing : ''}><ResumePreview resume={atsResume} label="Base resume preview" /></div></aside>
         </div>
       </section>}
 
       {stage === 4 && tailoring.current && <section className={`${styles.stage} ${styles.reviewStage}`}>
-        <div className={styles.reviewToolbar}>
-          <div className={styles.reviewTitle}><span className={styles.reviewBreadcrumb}>Tailor & review <b>›</b> {job.jobTitle || 'Job-specific resume'}</span><h2>{tailoring.current.resume.title || job.jobTitle || 'Tailored resume'}</h2><p>Tailored from {(tailoring.current.sourceResume || atsResume).name || 'your selected resume'} · Master resume unchanged</p></div>
-          <div className={styles.reviewToolbarStatus}><span>✓ Ready to review</span><div className={styles.finalActions}><button className={styles.secondary} onClick={saveVersion}>Save draft</button><button className={styles.primary} onClick={exportTailoredResume}>Export PDF</button></div></div>
-        </div>
         <div className={styles.mobileReviewToggle}>{viewToggle}</div>
         <div className={`${styles.reviewGrid} ${styles[mobileView]}`}>
           <div className={styles.reviewColumn}>
-            <section className={styles.roleCard}><div className={styles.roleIcon}>✦</div><div><span className={styles.copilotLabel}>AI COPILOT</span><h2>{job.jobTitle || 'Target role'}</h2><p>{job.company || 'Job-specific version'}<span>•</span>{atsResume.name || 'Selected resume'}</p><small>{displayedAnalysis ? '● Saved source resume analysis' : 'Analysis unavailable for this older draft'}</small></div><button className={styles.textAction} onClick={() => setStage(2)}>✎ Edit</button></section>
-            <div className={styles.metricGrid}><div><span className={styles.metricIcon}>☷</span><p>Matched skills<strong>{match.matched.length} / {Math.max(match.keywords.length, match.matched.length)}</strong></p></div><div><span className={`${styles.metricIcon} ${styles.amber}`}>☆</span><p>Missing terms<strong>{match.missing.length}</strong></p></div><div><span className={`${styles.metricIcon} ${styles.green}`}>▤</span><p>AI ATS estimate<strong>{displayedAnalysis ? `${displayedAnalysis.score}%` : '—'}</strong></p></div></div>
-            <section className={styles.insightPanel}><div className={styles.panelHeading}><div><h3>Job match insights</h3><p>Source resume estimate for guidance—not an employer ATS score. Review what matches and what still needs attention.</p></div><span>{match.coverage === null ? 'Analysis unavailable' : `${match.coverage}% match`}</span></div><div className={styles.matchRows}>{match.matched.map((term) => <div key={term}><span className={styles.check}>✓</span><p><strong>{term}</strong><small>Found in the selected resume.</small></p><em>In resume</em></div>)}</div>{tailoring.current.missingRequirements.length > 0 && <div className={styles.reviewWarning}>! &nbsp; {tailoring.current.missingRequirements.length} requirements need your review</div>}</section>
-            <div className={styles.insights}><div><h3>What changed</h3><ul>{(draftChanges.length ? draftChanges : [tailoring.current.sourceResume ? 'No content changes from the source resume.' : 'Change comparison unavailable for this older draft.']).map((item) => <li key={item}>{item}</li>)}</ul></div><div><h3>Missing requirements</h3>{tailoring.current.missingRequirements.length ? <><p className={styles.requirementHelp}>Only confirm requirements you genuinely have.</p><ul className={styles.requirementList}>{tailoring.current.missingRequirements.map((item, index) => <li key={`${item}-${index}`}><span>{item}</span><button type="button" onClick={() => addMissingRequirement(item)}>I have this · add</button></li>)}</ul></> : <p>No explicit missing requirements were flagged.</p>}</div></div>
-            {tailoring.current.sourceResume && <ChangeAudit master={tailoring.current.sourceResume} tailored={tailoring.current.resume} jdKeywords={match.keywords} onChange={(value) => dispatch(tailoringActions.updateTailoredResume(value))} />}
-            <details className={styles.editorDetails}><summary><span>Edit tailored resume</span><small>Changes here never modify the master.</small></summary><div className={styles.editorPane}><ResumeEditor resume={tailoring.current.resume} onChange={(value) => dispatch(tailoringActions.updateTailoredResume(value))} /></div></details>
-            {tailoring.versions.length > 0 && <section className={styles.versions}><h3>Saved versions</h3>{tailoring.versions.map((version) => <button key={version.id} onClick={() => openDraft(version)}><strong>{version.jobTitle || 'Untitled role'} · {version.company || 'Unknown company'}</strong><span>{new Date(version.createdAt).toLocaleString()}</span></button>)}</section>}
+            <TailorOverview key={tailoring.current.resume.id} resume={tailoring.current.resume} jd={job.text} title={job.jobTitle} before={displayedAnalysis?.score ?? tailoring.current.matchComparison?.before} analysis={tailoredMatch} onEditJob={() => setStage(3)} onRetailor={retailor} retailoring={retailoring} retailorError={retailorError} editingUnavailable={tailoring.current.matchComparison?.status === 'unavailable'} />
           </div>
-          <aside className={styles.previewPane}><div className={styles.previewHeader}><div><h3>Live resume preview</h3><span>Master resume stays unchanged.</span></div><div><button>A4⌄</button><button>⌕ 100%⌄</button></div></div><ResumePreview resume={tailoring.current.resume} label="Tailored resume preview" /></aside>
+          <aside className={styles.previewPane}><div className={styles.previewHeader}><div><h3>Resume preview</h3></div><div role="group" aria-label="Compare resume versions"><button aria-pressed={!previewSource} onClick={() => setPreviewSource(false)}>Tailored</button><button disabled={!tailoring.current.sourceResume} aria-pressed={previewSource} onClick={() => setPreviewSource(true)}>Base resume</button></div><div className={styles.previewActions}><button onClick={exportTailoredResume}>Export PDF</button></div></div><ResumePreview resume={previewSource ? tailoring.current.sourceResume : tailoring.current.resume} label={previewSource ? 'Base resume preview' : 'Tailored resume preview'} keywords={match.keywords} /></aside>
         </div>
       </section>}
     </main>

@@ -1,9 +1,11 @@
 import { registerResumeFonts } from './resumeFonts.js';
 import { projectDisplayName, projectDisplaySubtitle } from './projectRecoveryService.js';
+import { groupSkillsForResume } from './skillGroupingService.js';
+import { educationDetails, resumeLink } from './resumePresentation.js';
 
-const PAGE = { width: 210, height: 297, left: 10.5, right: 10.5, top: 14, bottom: 17 };
+const PAGE = { width: 210, height: 297, left: 30 / (72 / 25.4), right: 30 / (72 / 25.4), top: 38.4375 / (72 / 25.4), bottom: 15 };
 const COLOR = { ink: [24, 24, 24], muted: [84, 84, 84], rule: [181, 181, 181] };
-const PT_TO_MM = 0.3528;
+const PT_TO_MM = 25.4 / 72;
 
 export function sanitizePdfText(value) {
   return String(value || '')
@@ -27,13 +29,13 @@ export function calculateSkillLabelColumnWidth(groups, measureText, usableWidth)
   return Math.min(maximumWidth, Math.max(minimumWidth, widestLabel + 4));
 }
 
-export async function createResumePdfDocument(resume) {
+export async function createResumePdfDocument(resume, { keywords = [] } = {}) {
+  resume = { ...resume, skillGroups: groupSkillsForResume(resume) };
   const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true, putOnlyUsedFonts: true });
   await registerResumeFonts(doc);
   const usable = PAGE.width - PAGE.left - PAGE.right;
   let y = PAGE.top;
-  let activeSection = '';
 
   doc.setProperties({
     title: `${sanitizePdfText(resume.name) || 'Resume'} - Resume`,
@@ -43,60 +45,77 @@ export async function createResumePdfDocument(resume) {
   });
   doc.setLineHeightFactor(1.15);
 
-  const setType = (size = 9.8, style = 'normal', color = COLOR.ink) => {
+  const setType = (size = 9.75, style = 'normal', color = COLOR.ink) => {
     doc.setFont('Inter', style === 'bold' ? 'bold' : 'normal');
     doc.setFontSize(size);
     doc.setTextColor(...color);
     doc.setCharSpace(0);
   };
-  const lineHeight = (size) => size * PT_TO_MM * 1.6;
-  const split = (text, width, size = 9.8, style = 'normal') => {
+  const lineHeight = (size) => size * PT_TO_MM * 1.625;
+  const split = (text, width, size = 9.75, style = 'normal') => {
     setType(size, style);
     return doc.splitTextToSize(sanitizePdfText(text), Math.max(width, 12));
   };
-  const continuation = () => {
-    if (!activeSection) return;
-    setType(7.2, 'bold', COLOR.muted);
-    doc.text(`${activeSection.toUpperCase()} - CONTINUED`, PAGE.left, y);
-    y += 8;
-    doc.setDrawColor(...COLOR.rule);
-    doc.line(PAGE.left, y - 5, PAGE.width - PAGE.right, y - 5);
+  const terms = keywords.filter(Boolean).sort((a, b) => b.length - a.length).map(term => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const emphasis = new RegExp(`(^|[^a-z0-9+#])(${terms ? terms + '|' : ''}\\d+(?:\\.\\d+)?(?:%|\\+))(?=$|[^a-z0-9+#])`, 'gi');
+  const styledLines = (text, width, size = 9.75, prefix = '') => {
+    const value = sanitizePdfText(text), runs = []; let cursor = 0;
+    for (const match of value.matchAll(emphasis)) {
+      const start = match.index + match[1].length;
+      runs.push({ text: value.slice(cursor, start), bold: false }, { text: match[2], bold: true }); cursor = start + match[2].length;
+    }
+    runs.push({ text: value.slice(cursor), bold: false });
+    if (prefix) runs.unshift({ text: prefix, bold: true });
+    const lines = [[]]; let used = 0;
+    for (const run of runs) for (const word of run.text.split(/(\s+)/).filter(Boolean)) {
+      setType(size, run.bold ? 'bold' : 'normal');
+      const w = doc.getTextWidth(word);
+      if (used + w > width && used && word.trim()) { lines.push([]); used = 0; }
+      if (!used && !word.trim()) continue;
+      // Long URLs and identifiers must wrap rather than leave the page.
+      if (w > width) {
+        for (const char of word) { const cw = doc.getTextWidth(char); if (used + cw > width && used) { lines.push([]); used = 0; } lines.at(-1).push({ text: char, bold: run.bold }); used += cw; }
+      } else { lines.at(-1).push({ text: word, bold: run.bold }); used += w; }
+    }
+    return lines;
+  };
+  const drawStyledLine = (line, x, baseline, size = 9.75, color = COLOR.ink) => {
+    for (const run of line) { setType(size, run.bold ? 'bold' : 'normal', color); doc.text(run.text, x, baseline); x += doc.getTextWidth(run.text); }
   };
   const addPage = () => {
     doc.addPage();
     y = PAGE.top;
-    continuation();
   };
   const ensureSpace = (height) => {
     if (y + height > PAGE.height - PAGE.bottom) addPage();
   };
   const writeParagraph = (text, options = {}) => {
-    const { size = 9.8, style = 'normal', color = COLOR.ink, x = PAGE.left, width = usable, gap = 1.3, url = '' } = options;
-    const lines = split(text, width, size, style);
+    const { size = 9.75, style = 'normal', color = COLOR.ink, x = PAGE.left, width = usable, gap = 1.3, url = '' } = options;
+    const lines = style === 'normal' && !url ? styledLines(text, width, size) : split(text, width, size, style);
     const leading = lineHeight(size);
     if (!lines.length) return;
     lines.forEach((line, index) => {
-      ensureSpace(leading + gap);
+      ensureSpace(size * PT_TO_MM * .25);
       setType(size, style, color);
-      if (url && index === 0) doc.textWithLink(line, x, y, { url });
+      if (Array.isArray(line)) drawStyledLine(line, x, y, size, color);
+      else if (url && index === 0) doc.textWithLink(line, x, y, { url });
       else doc.text(line, x, y);
       y += leading;
     });
-    y += gap;
+    y += 3 * PT_TO_MM;
   };
   const section = (title) => {
     if (y + 13 > PAGE.height - PAGE.bottom) {
       doc.addPage();
       y = PAGE.top;
     }
-    activeSection = title;
-    y += 3.4;
-    setType(9.8, 'bold', COLOR.ink);
+    y += 12 * PT_TO_MM;
+    setType(9.75, 'bold', COLOR.ink);
     doc.text(title.toUpperCase(), PAGE.left, y);
     doc.setDrawColor(...COLOR.rule);
     doc.setLineWidth(0.25);
-    doc.line(PAGE.left, y + 1.8, PAGE.width - PAGE.right, y + 1.8);
-    y += 5.8;
+    doc.line(PAGE.left, y + 7.40625 * PT_TO_MM, PAGE.width - PAGE.right, y + 7.40625 * PT_TO_MM);
+    y += 24.84375 * PT_TO_MM;
   };
   const writeInlineLinks = (items, size = 8.1, startX = PAGE.left) => {
     if (!items.length) return;
@@ -125,119 +144,100 @@ export async function createResumePdfDocument(resume) {
     const label = sanitizePdfText(group.name || 'Skills');
     const value = sanitizePdfText((group.skills || []).join(', '));
     if (!value) return;
-    const size = 9.8;
-    setType(size, 'bold');
-    const labelWidth = doc.getTextWidth(`${label}: `);
-    if (labelWidth > usable * 0.6) {
-      writeParagraph(`${label}:`, { size, style: 'bold', gap: 0 });
-      writeParagraph(value, { size, gap: 1 });
-      return;
-    }
-    const words = value.split(' ');
-    let first = '';
-    setType(size);
-    while (words.length && doc.getTextWidth([first, words[0]].filter(Boolean).join(' ')) <= usable - labelWidth) {
-      first = [first, words.shift()].filter(Boolean).join(' ');
-    }
-    ensureSpace(lineHeight(size) * 2);
-    setType(size, 'bold');
-    doc.text(`${label}:`, PAGE.left, y);
-    setType(size);
-    doc.text(first, PAGE.left + labelWidth, y);
-    y += lineHeight(size);
-    if (words.length) writeParagraph(words.join(' '), { size, gap: 1 });
-    else y += 1;
+    const lines = styledLines(value, usable, 9.75, group.name ? `${label}: ` : '');
+    for (const line of lines) { ensureSpace(9.75 * PT_TO_MM * .25); drawStyledLine(line, PAGE.left, y); y += lineHeight(9.75); }
+    y += 3 * PT_TO_MM;
   };
-  const writeItemHeader = (left, right = '') => {
+  const writeItemHeader = (left, right = '', suffix = '') => {
     const safeLeft = sanitizePdfText(left);
     const safeRight = sanitizePdfText(right);
-    setType(8.1, 'normal', COLOR.muted);
+    setType(9, 'normal', COLOR.muted);
     const dateWidth = safeRight ? Math.min(doc.getTextWidth(safeRight) + 4, usable * 0.45) : 0;
     const leftWidth = usable - dateWidth;
-    const leftLines = split(safeLeft, leftWidth, 9.8, 'bold');
-    const leading = lineHeight(9.8);
+    const leftLines = split(safeLeft, leftWidth, 9.75, 'bold');
+    const leading = lineHeight(9.75);
     ensureSpace(Math.max(leftLines.length * leading, 5) + 3);
     leftLines.forEach((line, index) => {
-      setType(9.8, 'bold', COLOR.ink);
+      setType(9.75, 'bold', COLOR.ink);
       doc.text(line, PAGE.left, y + index * leading);
     });
+    if (suffix) {
+      setType(9.75, 'bold');
+      const roleWidth = doc.getTextWidth(safeLeft);
+      setType(9.75, 'normal');
+      const label = ', ' + sanitizePdfText(suffix);
+      if (roleWidth + doc.getTextWidth(label) <= leftWidth) doc.text(label, PAGE.left + roleWidth, y);
+      else {
+        const lines = split(label.replace(/^, /, ''), leftWidth, 9.75);
+        lines.forEach((line, index) => doc.text(line, PAGE.left, y + (leftLines.length + index) * leading));
+        y += lines.length * leading;
+      }
+    }
     if (safeRight) {
-      setType(8.1, 'normal', COLOR.muted);
+      setType(9, 'normal', COLOR.muted);
       doc.text(safeRight, PAGE.width - PAGE.right, y, { align: 'right' });
     }
-    y += Math.max(leftLines.length * leading, leading) + 0.8;
+    y += Math.max(leftLines.length * leading, leading) + 3 * PT_TO_MM;
   };
   const writeBullet = (text) => {
-    const lines = split(text, usable - 6, 9.8, 'normal');
+    const lines = styledLines(text, usable - 15 * PT_TO_MM);
     if (!lines.length) return;
-    const leading = lineHeight(9.8);
-    ensureSpace(lines.length * leading + 1.2);
-    setType(9.8, 'bold', COLOR.ink);
-    doc.circle(PAGE.left + 1.1, y - 1.05, 0.45, 'F');
-    lines.forEach((line, index) => {
-      setType(9.8, 'normal', COLOR.ink);
-      doc.text(line, PAGE.left + 4.2, y + index * leading);
-    });
-    y += lines.length * leading + 0.9;
+    const leading = lineHeight(9.75);
+    if (lines.length * leading < PAGE.height - PAGE.top - PAGE.bottom) ensureSpace((lines.length - 1) * leading + 9.75 * PT_TO_MM * .25);
+    setType(9.75, 'bold', COLOR.ink);
+    doc.circle(PAGE.left + 6 * PT_TO_MM, y - 1, 0.38, 'F');
+    lines.forEach((line) => { ensureSpace(9.75 * PT_TO_MM * .25); drawStyledLine(line, PAGE.left + 15 * PT_TO_MM, y); y += leading; });
+    y += 3 * PT_TO_MM;
   };
   const writeEntry = (item, type) => {
     const heading = type === 'experience'
-      ? [item.role, item.company].filter(Boolean).join(', ')
+      ? item.role
       : [projectDisplayName(item), projectDisplaySubtitle(item)].filter(Boolean).join(' - ');
     const dates = [item.startDate, item.endDate].filter(Boolean).join(' - ');
-    writeItemHeader(heading, [dates, item.location].filter(Boolean).join(' | '));
+    writeItemHeader(heading, [dates, item.location].filter(Boolean).join(' · '), type === 'experience' ? item.company : '');
     if (type === 'project' && item.link) writeParagraph(item.link, { size: 8.1, color: COLOR.muted, url: item.link, gap: 0.8 });
     (item.bullets || []).filter((bullet) => bullet.text).forEach((bullet) => writeBullet(bullet.text));
-    y += 1.2;
+    y += 9 * PT_TO_MM;
   };
 
   // Keep the export visually aligned with the clean, single-column live preview.
-  y = PAGE.top + 2;
-  writeParagraph((resume.name || 'Your name').toUpperCase(), { size: 18, style: 'bold', gap: 0.4 });
-  if (resume.title) writeParagraph(resume.title, { size: 10.5, style: 'bold', gap: 1.2 });
+  y = 48.105 * PT_TO_MM;
+  setType(18, 'bold'); doc.text(sanitizePdfText(resume.name || 'Your name').toUpperCase(), PAGE.left, y); y = 70.06125 * PT_TO_MM;
+  if (resume.title) { const lines = split(resume.title, usable, 10.5, 'bold'); setType(10.5, 'bold', [66, 66, 66]); doc.text(lines, PAGE.left, y); y += lines.length * 19.91175 * PT_TO_MM; }
   const contact = [];
   if (resume.contact?.email) contact.push({ label: resume.contact.email, url: `mailto:${resume.contact.email}` });
   if (resume.contact?.phone) contact.push({ label: resume.contact.phone, url: `tel:${resume.contact.phone.replace(/\s/g, '')}` });
   if (resume.contact?.location) contact.push({ label: resume.contact.location, url: '' });
-  writeInlineLinks([...contact, ...(resume.links || []).filter((link) => link.url).map((link) => ({ label: link.label || link.url, url: link.url }))], 9);
-  y += 2;
+  writeInlineLinks([...contact, ...(resume.links || []).map(resumeLink).filter((link) => link.url)], 9);
+  y += 1.219 * PT_TO_MM;
 
-  if (resume.summary) { section('Professional summary'); writeParagraph(resume.summary, { size: 9.8, gap: 0.8 }); }
+  if (resume.summary) { section('Professional summary'); writeParagraph(resume.summary, { size: 9.75, gap: 0.8 }); }
   if (resume.skillGroups?.length) { section('Skills'); resume.skillGroups.forEach(writeSkillGroup); }
-  if (resume.experience?.length) { section('Professional experience'); resume.experience.forEach((item) => writeEntry(item, 'experience')); }
-  if (resume.projects?.length) { section(resume.projectSectionTitle || 'Projects'); resume.projects.forEach((item) => writeEntry(item, 'project')); }
+  if (resume.experience?.length) { section('Professional experience'); resume.experience.forEach((item) => writeEntry(item, 'experience')); y -= 9 * PT_TO_MM; }
+  if (resume.projects?.length) { section(resume.projectSectionTitle || 'Projects'); resume.projects.forEach((item) => writeEntry(item, 'project')); y -= 9 * PT_TO_MM; }
   if (resume.education?.length) {
     section('Education');
     resume.education.forEach((item) => {
-      writeItemHeader([item.qualification, item.institution].filter(Boolean).join(' - '), [item.startDate, item.endDate].filter(Boolean).join(' - '));
-      const educationMeta = [item.location, item.details].filter(Boolean).join(' | ');
+      writeItemHeader(item.qualification, [item.startDate, item.endDate].filter(Boolean).join(' - '), item.institution);
+      const educationMeta = [item.location, educationDetails(item)].filter(Boolean).join(' | ');
       if (educationMeta) writeParagraph(educationMeta, { size: 8.45, color: COLOR.muted, gap: 1.4 });
     });
   }
   if (resume.certifications?.length) {
     section('Certifications');
-    resume.certifications.forEach((item) => writeParagraph([item.name, item.issuer, item.date].filter(Boolean).join(' - '), { size: 9.8, gap: 0.8 }));
+    resume.certifications.forEach((item) => writeParagraph([item.name, item.issuer, item.date].filter(Boolean).join(' - '), { size: 9.75, gap: 0.8 }));
   }
 
   if (resume.languages?.some((value) => value.trim())) {
     section('Languages');
-    writeParagraph(resume.languages.map((value) => value.trim()).filter(Boolean).join(', '), { size: 9.8, gap: 0.8 });
+    writeParagraph(resume.languages.map((value) => value.trim()).filter(Boolean).join(', '), { size: 9.75, gap: 0.8 });
   }
 
-  const pages = doc.getNumberOfPages();
-  for (let page = 1; page <= pages; page += 1) {
-    doc.setPage(page);
-    doc.setDrawColor(...COLOR.rule);
-    doc.setLineWidth(0.25);
-    doc.line(PAGE.left, PAGE.height - 11, PAGE.width - PAGE.right, PAGE.height - 11);
-    setType(7.2, 'normal', COLOR.muted);
-    doc.text(`Page ${page} of ${pages}`, PAGE.width - PAGE.right, PAGE.height - 7.5, { align: 'right' });
-  }
   doc.setPage(1);
   return doc;
 }
 
-export async function downloadResumePdf(resume, filename = 'tailored-resume.pdf') {
-  const doc = await createResumePdfDocument(resume);
+export async function downloadResumePdf(resume, filename = 'tailored-resume.pdf', options = {}) {
+  const doc = await createResumePdfDocument(resume, options);
   doc.save(filename.replace(/[^a-z0-9._-]+/gi, '-').toLowerCase());
 }

@@ -8,6 +8,14 @@ const slice = createSlice({
     setTailoredResult(state, action) { state.current = action.payload; state.status = 'succeeded'; state.error = ''; },
     clearCurrent(state) { state.current = null; state.status = 'idle'; state.error = ''; },
     updateTailoredResume(state, action) { if (state.current) state.current.resume = action.payload; },
+    addExperienceEvidence(state, action) {
+      if (!state.current) return;
+      const { entryId, text, requirement } = action.payload;
+      const entry = state.current.resume.experience.find(item => item.id === entryId);
+      if (!entry || !text?.trim() || text.length > 1200 || entry.bullets.length >= 20) return;
+      entry.bullets.push({ id: crypto.randomUUID(), text: text.trim() });
+      state.current.changeSummary.push(`Added user-confirmed experience evidence for ${requirement}.`);
+    },
     confirmMissingRequirement(state, action) {
       if (!state.current) return;
       const requirement = String(action.payload.requirement || '').trim();

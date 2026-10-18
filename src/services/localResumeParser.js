@@ -116,8 +116,14 @@ function parseEducationLines(lines) {
 function parseSkillLines(lines) {
   const groups = [];
   lines.forEach((rawLine) => {
-    const line = rawLine.trim();
+    const line = rawLine.replace(BULLET_START, '').trim();
     if (!line) return;
+    // Category headings are labels, not individual skills. Some PDFs place
+    // the label and its values on separate lines without a colon.
+    if (/^(?:front[ -]?end|back[ -]?end|devops|frameworks|tools|databases|programming languages|design tools|cloud|platforms)(?:\s*[&/]\s*(?:tools|devops|cloud|platforms|frameworks))?\s*:?$/i.test(line)) {
+      groups.push({ id: crypto.randomUUID(), name: line.replace(/:$/, '').trim(), skills: [] });
+      return;
+    }
     const colonIndex = line.indexOf(':');
     const hasGroup = colonIndex > 0 && colonIndex < 45;
     if (hasGroup || !groups.length) {

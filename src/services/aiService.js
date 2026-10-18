@@ -1,4 +1,6 @@
-import { analysisKey, readCachedAnalysis, cacheAnalysis } from './atsAnalysis';
+import { analysisKey, readCachedAnalysis, cacheAnalysis, validateAnalysis } from './atsAnalysis';
+import { analyzeAtsLocally } from './localAtsService.js';
+import { parseResumeHybrid } from './hybridResumeParser.js';
 const REQUEST_TIMEOUT = 55000;
 
 async function postAI(action, payload) {
@@ -43,16 +45,29 @@ async function postAI(action, payload) {
   } finally { clearTimeout(timeout); }
 }
 
-export const parseResumeWithAI = (rawText) => postAI('parse', { rawText });
+export const parseResumeWithAI = (rawText) => parseResumeHybrid(rawText, (text) => postAI('parse', { rawText: text }));
 const inFlight = new Map();
 const validatedResults = new Map();
-export const analyzeAtsWithAI = async (resume, jobDescription) => {
+export const analyzeAtsWithAI = async (resume, jobDescription, { force = false, minimumDuration = 0, useAI = false } = {}) => {
+  const started = Date.now();
+  // Yield before CPU work so the browser can paint the checking state.
+  if (minimumDuration > 0) await new Promise(resolve => setTimeout(resolve, 0));
   const key = analysisKey(resume, jobDescription);
-  const cached = readCachedAnalysis(resume, jobDescription);
+  if (useAI) {
+    // AI checks never reuse a local report or another document's pending request.
+    try {
+      const raw = await postAI('ats', { resume, jobDescription });
+      const report = validateAnalysis(raw, resume, jobDescription);
+      return cacheAnalysis({ ...report, method: 'ai' }, resume, jobDescription);
+    } catch (error) {
+      return { ...analyzeAtsLocally(resume, jobDescription), method: 'local-fallback', warning: `AI analysis unavailable: ${error.message}` };
+    }
+  }
+  const cached = force ? null : readCachedAnalysis(resume, jobDescription);
   if (cached) return cached;
-  if (validatedResults.has(key)) return structuredClone(validatedResults.get(key));
+  if (!force && validatedResults.has(key)) return structuredClone(validatedResults.get(key));
   if (!inFlight.has(key)) {
-    const pending = postAI('ats', { resume, jobDescription }).then((report) => {
+    const pending = Promise.resolve().then(() => analyzeAtsLocally(resume, jobDescription)).then((report) => {
       const validated = cacheAnalysis(report, resume, jobDescription);
       validatedResults.set(key, validated);
       if (validatedResults.size > 20) validatedResults.delete(validatedResults.keys().next().value);
@@ -60,7 +75,29 @@ export const analyzeAtsWithAI = async (resume, jobDescription) => {
     }).finally(() => inFlight.delete(key));
     inFlight.set(key, pending);
   }
-  return structuredClone(await inFlight.get(key));
+  try {
+    return structuredClone(await inFlight.get(key));
+  } finally {
+    const remaining = Math.min(2000, minimumDuration) - (Date.now() - started);
+    if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
+  }
 };
-export const tailorResumeWithAI = (masterResume, jobDescription, company, jobTitle, analysis) =>
-  postAI('tailor', { masterResume, jobDescription, company, jobTitle, analysis });
+const tailoredCache = new Map();
+const pendingTailoring = new Map();
+export const tailorResumeWithAI = async (masterResume, jobDescription, company, jobTitle, analysis, { force = false, confirmedSkills = [], verifiedCareerProfile } = {}) => {
+  const payload = { masterResume, jobDescription, company, jobTitle, analysis, confirmedSkills, ...(verifiedCareerProfile ? { verifiedCareerProfile } : {}) };
+  if (force || confirmedSkills.length) return postAI('tailor', payload);
+  const key = JSON.stringify(['role-evidence-v1', masterResume, verifiedCareerProfile, jobDescription, company, jobTitle]);
+  if (tailoredCache.has(key)) return structuredClone(tailoredCache.get(key));
+  if (!pendingTailoring.has(key)) {
+    const pending = postAI('tailor', payload).then(result => {
+      if (result.matchComparison?.status === 'completed' && !result.tailoringReport?.roles.some(role => role.validation_failures.length)) {
+        tailoredCache.set(key, result);
+        if (tailoredCache.size > 10) tailoredCache.delete(tailoredCache.keys().next().value);
+      }
+      return result;
+    }).finally(() => pendingTailoring.delete(key));
+    pendingTailoring.set(key, pending);
+  }
+  return structuredClone(await pendingTailoring.get(key));
+};

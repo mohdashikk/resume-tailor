@@ -3,10 +3,10 @@ import { createPortal } from 'react-dom';
 import { buildChangeAudit, rejectAuditChange } from '../services/changeAuditService';
 import styles from './ChangeAudit.module.css';
 
-export default function ChangeAudit({ master, tailored, jdKeywords, onChange }) {
+export default function ChangeAudit({ master, tailored, jdKeywords, onChange, defaultOpen = true }) {
   const audit = useMemo(() => buildChangeAudit(master, tailored, jdKeywords), [master, tailored, jdKeywords]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const [decisions, setDecisions] = useState({});
 
   useEffect(() => {

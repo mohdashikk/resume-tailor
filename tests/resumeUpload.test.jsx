@@ -7,10 +7,11 @@ import { afterEach, expect, it, vi } from 'vitest';
 import App from '../src/App';
 import ResumePreview from '../src/components/ResumePreview';
 import resumeReducer, { resumeActions } from '../src/features/resume/resumeSlice';
-import jobReducer from '../src/features/jobDescription/jobSlice';
+import jobReducer, { jobActions } from '../src/features/jobDescription/jobSlice';
 import tailoringReducer from '../src/features/tailoring/tailoringSlice';
 import { blankResume } from '../src/services/resumeValidation';
-import { parseResumeWithAI } from '../src/services/aiService';
+import { parseResumeWithAI, analyzeAtsWithAI } from '../src/services/aiService';
+import { analyzeAtsLocally } from '../src/services/localAtsService';
 import { extractResumeText } from '../src/services/fileExtraction';
 
 vi.mock('../src/services/aiService', () => ({ parseResumeWithAI: vi.fn(), analyzeAtsWithAI: vi.fn(), tailorResumeWithAI: vi.fn() }));
@@ -54,6 +55,13 @@ it('uses the latest upload in the existing template without mixing previous resu
     expect(preview.textContent).toContain('new@example.com');
     expect(preview.textContent).not.toContain('Previous Person');
     expect(preview.textContent).not.toContain('Old skill');
+    await act(async () => store.dispatch(jobActions.updateJob({ text: 'Requirements:\nReact and JavaScript are required for our frontend product engineering team.' })));
+    analyzeAtsWithAI.mockImplementation(async (candidate, jd) => analyzeAtsLocally(candidate, jd));
+    await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === 'Check ATS').click());
+    await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent.includes('Check ATS Score')).click());
+    expect(analyzeAtsWithAI.mock.calls.at(-1)[0].name).toBe('New Person');
+    expect(analyzeAtsWithAI.mock.calls.at(-1)[0].id).toBe(state.workingResume.id);
+    expect(container.textContent).toContain('second.pdf');
   } finally { await act(async () => root.unmount()); container.remove(); }
 });
 

@@ -51,6 +51,7 @@ export function buildChangeAudit(master, tailored, jdKeywords = []) {
   const introducedTerms = keywordHits(resumeEvidence(tailored), jdKeywords).filter((term) => !keywordHits(resumeEvidence(master), [term]).length);
   const changes = [];
 
+  addChange(changes, 'Professional headline', master.title, tailored.title, jdKeywords, { type: 'rootField', field: 'title' });
   addChange(changes, 'Professional summary', master.summary, tailored.summary, jdKeywords, { type: 'rootField', field: 'summary' });
   const skills = (resume) => resume.skillGroups.map((group) => `${group.name}: ${group.skills.join(', ')}`).join(' | ');
   addChange(changes, 'Skills and ordering', skills(master), skills(tailored), jdKeywords, { type: 'rootField', field: 'skillGroups' });

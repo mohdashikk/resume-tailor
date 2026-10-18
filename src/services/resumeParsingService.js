@@ -2,6 +2,8 @@ import { parseResumeLocally } from './localResumeParser.js';
 import { splitResumeSections } from './resumeSections.js';
 import { resumeSchema } from './resumeValidation.js';
 import { restoreProjectDescriptions } from './projectRecoveryService.js';
+import { containsTerm, normalizeAliases } from './atsAnalysis.js';
+import { groupSkillsByCategory } from './skillGroupingService.js';
 
 export function prepareUploadedResume(candidate) {
   const parsed = resumeSchema.parse(candidate);
@@ -10,7 +12,7 @@ export function prepareUploadedResume(candidate) {
     return { ...entry, id, masterId: id, bullets: entry.bullets.map((bullet) => ({ ...bullet, id: crypto.randomUUID() })) };
   });
   // Every import is a new document, even if the provider repeats opaque IDs.
-  return { ...parsed, id: crypto.randomUUID(), experience: freshEntries(parsed.experience), projects: freshEntries(parsed.projects) };
+  return { ...parsed, id: crypto.randomUUID(), skillGroups: groupSkillsByCategory(parsed.skillGroups), experience: freshEntries(parsed.experience), projects: freshEntries(parsed.projects) };
 }
 
 export function reconcileParsedResume(candidate, rawText) {
@@ -21,6 +23,13 @@ export function reconcileParsedResume(candidate, rawText) {
   const sections = splitResumeSections(rawText);
   const result = restoreProjectDescriptions(parsed, rawText);
   const warnings = [...result.ambiguities];
+  const sourceText = normalizeAliases(rawText);
+  result.skillGroups = result.skillGroups.map((group) => {
+    const skills = group.skills.filter((skill) => containsTerm(sourceText, normalizeAliases(skill)));
+    if (skills.length !== group.skills.length) warnings.push('Removed skills that could not be found in the uploaded text. Review the Skills section.');
+    const name = containsTerm(sourceText, normalizeAliases(group.name)) ? group.name : 'Skills';
+    return { ...group, name, skills };
+  }).filter((group) => group.skills.length);
   for (const field of ['email', 'phone', 'location']) {
     if (!result.contact[field] && local.contact[field]) result.contact[field] = local.contact[field];
   }

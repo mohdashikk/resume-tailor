@@ -30,6 +30,22 @@ Developer | Early Ltd | 2020 - 2021
 • Maintained internal tools.`;
 
 describe('uploaded resume mapping into the existing template', () => {
+  it('keeps standalone Backend and DevOps labels out of skill values', () => {
+    const parsed = parseResumeLocally('Alex Morgan\nSkills\nBackend\nNode.js, SQL\nDevOps\nDocker, CI/CD');
+    expect(parsed.skillGroups.map(({ name, skills }) => ({ name, skills }))).toEqual([
+      { name: 'Backend', skills: ['Node.js', 'SQL'] },
+      { name: 'DevOps', skills: ['Docker', 'CI/CD'] },
+    ]);
+  });
+
+  it('removes invented skills and category labels while retaining source-backed aliases', () => {
+    const parsed = reconcileParsedResume({ ...blankResume(), name: 'Alex Morgan', skillGroups: [
+      { id: 's', name: 'Backend and DevOps', skills: ['React', 'Python', 'Docker'] },
+    ] }, 'Alex Morgan\nSkills\nReact.js, Figma');
+    expect(parsed.skillGroups[0]).toMatchObject({ name: 'Skills', skills: ['React'] });
+    expect(parsed.ambiguities.join(' ')).toContain('Removed skills');
+  });
+
   it('identifies all sections, inline headings and multiple work-entry layouts', () => {
     const parsed = parseResumeLocally(text);
     expect(parsed).toMatchObject({ name: 'Nisha Patel', title: 'Frontend Developer', contact: { email: 'nisha@example.com', phone: '+91 98765 43210', location: 'Pune, India' } });

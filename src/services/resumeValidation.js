@@ -38,6 +38,25 @@ export const tailoredResultSchema = z.object({
   resume: resumeSchema,
   changeSummary: z.array(text).max(30).default([]),
   missingRequirements: z.array(text).max(30).default([]),
+  tailoringReport: z.object({
+    version: z.literal('role-evidence-v1'),
+    roles: z.array(z.object({
+      role_id: z.string(), entry_id: z.string(), section: z.enum(['experience', 'projects']),
+      original_bullets: z.array(text), tailored_bullets: z.array(text),
+      tailored_bullet_evidence: z.array(z.object({ bullet_index: z.number().int().nonnegative(), evidence_references: z.array(z.string()) })).default([]),
+      status: z.enum(['tailored', 'retained', 'not_relevant']), validation_failures: z.array(shortText),
+      matched_jd_requirements: z.array(z.object({ requirement_id: z.string(), term: shortText, classification: z.enum(['direct', 'transferable', 'unverified']), evidence_references: z.array(z.string()) })),
+      evidence_references: z.array(z.object({ id: z.string(), text, origin: z.enum(['resume', 'verified_profile', 'user_role_confirmation']) }).passthrough()),
+      changes_made: z.array(text), claims_requiring_verification: z.array(shortText),
+    })).max(100),
+    requirements: z.array(z.object({ id: z.string(), term: shortText, priority: z.enum(['required', 'preferred']), classification: z.enum(['direct', 'transferable', 'unverified']) }).passthrough()).max(150),
+    claims_requiring_verification: z.array(z.object({ term: shortText, reason: text })),
+  }).optional(),
+  matchComparison: z.object({
+    before: z.number().min(0).max(100), after: z.number().min(0).max(100),
+    changedBullets: z.number().int().nonnegative(), rejectedBullets: z.number().int().nonnegative(),
+    status: z.enum(['local', 'completed', 'unavailable']),
+  }).optional(),
 });
 
 export const blankResume = () => ({

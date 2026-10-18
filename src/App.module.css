@@ -783,3 +783,37 @@
   .aiScanLine { top: 26px; left: 27px; width: 34px; }
   .aiLoadingSteps { max-width: 280px; }
 }
+
+/* Reference tailoring workspace: compact controls left, document right. */
+.reviewStage { display: flex; flex-direction: column; gap: 16px; }
+.reviewGrid { order: 1; grid-template-columns: minmax(360px, .86fr) minmax(540px, 1.14fr); gap: 30px; }
+.reviewGrid > .reviewColumn { grid-column: 1; grid-row: 1; position: static; max-height: none; overflow: visible; padding: 0; gap: 22px; }
+.reviewGrid > .previewPane { grid-column: 2; grid-row: 1; position: sticky; top: 18px; max-height: calc(100vh - 36px); border: 0; border-radius: 0; background: transparent; box-shadow: none; container-type: inline-size; padding: 0 8px 12px; }
+.legacyReview { display: none !important; }
+.reviewDiagnostics { order: 2; border: 1px solid #e1dfe8; border-radius: 12px; background: #fff; padding: 12px 16px; font-size: 12px; color: #77818c; }
+.reviewDiagnostics summary,.reviewExtras > summary { cursor: pointer; }
+.reviewDiagnostics .insightPanel { border: 0; box-shadow: none; }
+.reviewExtras { font-size: 12px; color: #77818c; }
+.reviewGrid .previewHeader { background: #f8f6ff; border: 0; padding: 0 0 16px; min-height: 44px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+.reviewGrid .previewHeader > div:first-child { display: none; }
+.previewHeader [role=group] { display: flex; padding: 2px; background: #f0f0f3; border-radius: 10px; }
+.previewHeader [role=group] button { background: transparent; color: #777; border: 0; border-radius: 8px; padding: 5px 9px; font-size: 13px; cursor: pointer; }
+.previewHeader [role=group] button[aria-pressed=true] { background: #fff; color: #17191b; box-shadow: 0 1px 4px #0001; }
+.previewActions { display: flex; gap: 8px; }
+.previewActions button { background: #fff; border: 1px solid #e1dfe8; border-radius: 8px; padding: 6px 9px; font-size: 12px; cursor: pointer; }
+.previewActions button:first-child { background: #8aa8ff; color: #fff; border-color: #8aa8ff; }
+.reviewGrid .previewPane > article { width: 210mm; max-width: none; zoom: .88; margin: 8px auto 0; }
+.fitCheck { border: 1px solid #cbd4e1; background: white; color: #506078; padding: 7px 12px; border-radius: 20px; font-size: 12px; cursor: pointer; margin-bottom: 12px; }
+@container (max-width: 720px) { .reviewGrid .previewPane > article { zoom: .78; } }
+@container (max-width: 640px) { .reviewGrid .previewPane > article { zoom: .69; } }
+@container (max-width: 560px) { .reviewGrid .previewPane > article { zoom: .61; } }
+@media (max-width: 1180px) { .reviewGrid { grid-template-columns: minmax(320px,.85fr) minmax(420px,1.15fr); gap: 18px; } }
+@media (max-width: 950px) { .reviewGrid { grid-template-columns: 1fr; } .reviewGrid > .reviewColumn,.reviewGrid > .previewPane { grid-column: 1; grid-row: auto; position: static; max-height: none; } }
+@media (max-width: 620px) { .reviewGrid { gap: 18px; } .reviewGrid .previewHeader { position: static; } .previewActions { flex-wrap: wrap; } }
+
+/* Current resume left; ATS matching and rewrite controls right. */
+.reviewGrid { grid-template-columns: minmax(520px, 1.2fr) minmax(340px, .8fr); }
+.reviewGrid > .previewPane { grid-column: 1; grid-row: 1; }
+.reviewGrid > .reviewColumn { grid-column: 2; grid-row: 1; }
+@media (max-width: 1180px) { .reviewGrid { grid-template-columns: minmax(420px, 1.1fr) minmax(320px, .9fr); gap: 18px; } }
+@media (max-width: 950px) { .reviewGrid { grid-template-columns: 1fr; } .reviewGrid > .reviewColumn,.reviewGrid > .previewPane { grid-column: 1; grid-row: auto; } }
