@@ -3,7 +3,7 @@ import { extractProjectDescriptions, extractProjectSectionTitle } from './projec
 import { identifyHeading, splitResumeSections } from './resumeSections.js';
 
 const DATE_TOKEN = /\b(?:(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+)?(?:19|20)\d{2}\b|\bpresent\b|\bcurrent\b/gi;
-const BULLET_START = /^(?:[•●▪◦+«*-]\s*)+/;
+const BULLET_START = /^(?:[•●▪◦+«»*=-]\s*)+/;
 const ROLE_NAME = /\b(developer|engineer|designer|manager|analyst|consultant|intern|lead|director|specialist|officer|associate|architect|coordinator|administrator|accountant|executive|researcher)\b/i;
 
 function parseDateRange(line) {
@@ -22,8 +22,17 @@ function parseExperienceLines(lines, warnings) {
   let current = null;
   let pending = [];
   const roleLike = (value) => ROLE_NAME.test(value);
+  const standaloneRole = (value) => roleLike(value) && value.length <= 80
+    && !/[.!?]/.test(value) && value.split(/\s+/).length <= 7;
+  const locationLine = (value) => value.length <= 80 && /^[\p{L}][\p{L}\s.'-]+,\s*[\p{L}\s.'-]+$/u.test(value);
   const createEntry = (header, dates) => {
-    const parts = header.flatMap((line) => line.split(/\s+\|\s+|\s+[-–—]\s+|\s+at\s+/i)).flatMap((part) => {
+    const headerDates = dates || header.map(parseDateRange).find(Boolean);
+    const earlierDates = header.slice(0, -1).map(parseDateRange).find(Boolean);
+    const heading = header.map((line) => {
+      const found = parseDateRange(line);
+      return found ? `${line.slice(0, found.index)} ${line.slice(found.endIndex)}`.trim() : line;
+    });
+    const parts = heading.flatMap((line) => line.split(/\s+\|\s+|\s+[-–—]\s+|\s+at\s+/i)).flatMap((part) => {
       const comma = part.indexOf(',');
       return comma > 0 && roleLike(part.slice(0, comma)) ? [part.slice(0, comma), part.slice(comma + 1)] : [part];
     }).map((part) => part.trim()).filter(Boolean);
@@ -39,13 +48,26 @@ function parseExperienceLines(lines, warnings) {
       }
       return '';
     };
-    return { id, masterId: id, role: headingField(role, 'role', 500), company: headingField(parts.shift() || '', 'company', 500), location: headingField(parts.join(' — '), 'location', 120), startDate: dates?.startDate || '', endDate: dates?.endDate || '', bullets: [] };
+    const company = parts.shift() || '';
+    let location = parts.join(' — ');
+    const ocrTail = location.match(/\s+([a-z]{1,2}\s*-\s*[a-z]{1,2})$/);
+    if (ocrTail && location.includes(',')) {
+      warnings.push(`Unclear OCR text after the location for ${role || 'an experience entry'} at ${company}: ${ocrTail[1]}. Verify it against the upload.`);
+      location = location.slice(0, ocrTail.index).trim();
+    }
+    return { id, masterId: id, role: headingField(role, 'role', 500), company: headingField(company, 'company', 500), location: headingField(location, 'location', 120), startDate: headerDates?.startDate || earlierDates?.startDate || '', endDate: headerDates?.endDate || earlierDates?.endDate || '', bullets: [] };
   };
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index].trim();
     const dates = parseDateRange(line);
-    if (!BULLET_START.test(line) && dates && (dates.endDate || pending.length || roleLike(line))) {
-      const prefix = line.slice(0, dates.index).replace(/[\s|~–—-]+$/, '');
+    const prefix = dates ? line.slice(0, dates.index).replace(/[\s|~–—-]+$/, '') : '';
+    const nextLine = lines[index + 1]?.trim() || '';
+    const roleThenCompany = dates && roleLike(prefix) && prefix.length <= 80
+      && !/\s(?:at|\|)\s|\s[-–—]\s/i.test(prefix) && nextLine && !BULLET_START.test(nextLine)
+      && !roleLike(nextLine);
+    if (roleThenCompany) { pending.push(line); continue; }
+    if (!BULLET_START.test(line) && dates && prefix.length <= 180
+      && (roleLike(prefix) || pending.some(standaloneRole))) {
       current = createEntry([...pending, prefix.replace(/\s+~\s+/g, ' | ')], dates);
       const suffix = line.slice(dates.endIndex);
       const dateLocation = suffix.replace(/^[\s|\u00b7\u2022\ufffd-]+/, '').trim();
@@ -56,11 +78,21 @@ function parseExperienceLines(lines, warnings) {
     if (BULLET_START.test(line)) {
       if (pending.length) { current = createEntry(pending); entries.push(current); pending = []; }
       if (!current) { current = createEntry([]); entries.push(current); }
-      current.bullets.push({ id: crypto.randomUUID(), text: line.replace(BULLET_START, '').trim() });
-    } else if (current?.bullets.length && !roleLike(line) && (/^[a-z]/.test(line) || (!parseDateRange(lines[index + 1] || '') && !parseDateRange(lines[index + 2] || '')))) {
-      const bullet = current.bullets.at(-1);
-      bullet.text = `${bullet.text} ${line}`.replace(/\s+/g, ' ').trim();
-    } else pending.push(line);
+      current.bullets.push({ id: crypto.randomUUID(), text: line.replace(BULLET_START, '').replace(/^[.:]\s*/, '').trim() });
+      continue;
+    }
+    if (standaloneRole(line)) { pending.push(line); continue; }
+    if (current && !pending.length) {
+      if (!current.bullets.length && !current.location && locationLine(line)) { current.location = line; continue; }
+      // Text-based PDF exports often omit the visible bullet glyph. Preserve
+      // each sentence as a point and join only obvious wrapped continuations.
+      if (current.bullets.length && /^[a-z]/.test(line)) {
+        const bullet = current.bullets.at(-1);
+        bullet.text = `${bullet.text} ${line}`.replace(/\s+/g, ' ').trim();
+      } else current.bullets.push({ id: crypto.randomUUID(), text: line });
+      continue;
+    }
+    pending.push(line);
   }
   if (pending.length) {
     // Keep unclassified source text visible instead of silently dropping it.
@@ -82,14 +114,25 @@ function parseEducationLines(lines) {
       const dates = parseDateRange(line);
       const id = crypto.randomUUID();
       const expected = /expected/i.test(line);
-      const qualification = (dates ? line.slice(0, dates.index) : line)
+      let qualification = (dates ? line.slice(0, dates.index) : line)
         .replace(/expected\s*:?\s*$/i, '')
+        .replace(/\s*[-–—]?\s*CONTINUED\s*$/i, '')
         .replace(/\s+[-–—|]\s*$/, '')
         .trim();
+      let institution = pendingInstitution;
+      let location = '';
+      const institutionPart = qualification.match(/^(.+?)\s+[-–—]\s+(.+)$/);
+      if (institutionPart && !/^distance education$/i.test(institutionPart[2])
+        && /\b(education|college|university|school|institute|academy|polytechnic)\b/i.test(institutionPart[2])) {
+        qualification = institutionPart[1];
+        const parts = institutionPart[2].split(/,\s*/);
+        institution = parts.shift() || institution;
+        location = parts.join(', ');
+      }
       current = {
-        id, institution: pendingInstitution, qualification, location: '',
-        startDate: expected ? '' : (dates?.startDate || ''),
-        endDate: expected ? (dates?.startDate || '') : (dates?.endDate || ''),
+        id, institution, qualification, location,
+        startDate: dates?.endDate && !expected ? dates.startDate : '',
+        endDate: dates?.endDate || dates?.startDate || '',
         details: '',
       };
       entries.push(current);
@@ -97,9 +140,11 @@ function parseEducationLines(lines) {
       return;
     }
     if (current && /student|grade|gpa|expected/i.test(line)) { current.details = [current.details, line].filter(Boolean).join(' '); return; }
+    if (current && /^distance education$/i.test(line) && !current.institution) { current.qualification = `${current.qualification} — ${line}`; return; }
     if (!current || qualificationStart.test(lines[index + 1] || '')) { pendingInstitution = [pendingInstitution, line].filter(Boolean).join(' '); return; }
     const dates = parseDateRange(line);
     if (dates && dates.index === 0) { current.startDate = dates.startDate; current.endDate = dates.endDate; return; }
+    if (current.location && current.location.toLowerCase() === line.toLowerCase()) return;
     if (/student|year|grade|gpa|expected/i.test(line)) {
       current.details = [current.details, line].filter(Boolean).join(' ');
     } else if (!current.institution) {
@@ -113,6 +158,52 @@ function parseEducationLines(lines) {
   return entries;
 }
 
+// Many designed PDFs omit separators between individual skill labels. Match
+// recognizable phrases only when their words appear in the source; keep any
+// unmatched span as written rather than inventing a skill or dropping text.
+const SKILL_PHRASES = [
+  'Design Handoff (Zeplin / Figma Dev Mode)', 'Debugging & Problem Solving',
+  'Component-Based Architecture', 'Cross-Browser Compatibility',
+  'Information Architecture', 'Performance Optimization', 'Accessibility (WCAG)',
+  'React Testing Library', 'Responsive Design', 'Interaction Design', 'Usability Testing',
+  'Design Systems', 'User Research', 'Visual Design', 'Adobe XD', 'Tailwind CSS',
+  'React Native', 'React.js', 'Node.js', 'HTML/CSS', 'UI/UX', 'CI/CD',
+  'Figma', 'Wireframing', 'Prototyping', 'HTML', 'CSS', 'Tailwind', 'Sass',
+  'JavaScript', 'TypeScript', 'React', 'GitHub', 'Git', 'Agile', 'Scrum',
+  'Python', 'Java', 'SQL', 'Docker', 'Kubernetes', 'AWS', 'Azure',
+];
+const skillPhrasePattern = (phrase) => new RegExp(`(?<![a-z0-9])${phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\ /g, '\\s+').replace(/ /g, '\\s+')}(?![a-z0-9])`, 'gi');
+
+function splitSkillSequence(value) {
+  const source = String(value || '').replace(/\bDesign,\s*Systems\b/gi, 'Design Systems').replace(/\bUl\b/g, 'UI').replace(/\bReact\.Js\b/gi, 'React.js').replace(/\s+/g, ' ').trim();
+  if (!source) return [];
+  const occupied = new Array(source.length).fill(false);
+  const matches = [];
+  for (const phrase of [...SKILL_PHRASES].sort((a, b) => b.length - a.length)) {
+    for (const match of source.matchAll(skillPhrasePattern(phrase))) {
+      const start = match.index; const end = start + match[0].length;
+      if (occupied.slice(start, end).some(Boolean)) continue;
+      occupied.fill(true, start, end);
+      matches.push({ start, end, name: phrase });
+    }
+  }
+  const items = [];
+  const addUnknown = (fragment) => {
+    for (const part of fragment.split(/[,;|•]/)) {
+      const text = part.replace(/^[\s/&()]+|[\s/&()]+$/g, '').trim();
+      if (text && !/^(?:and|or)$/i.test(text)) items.push(text);
+    }
+  };
+  let cursor = 0;
+  for (const match of matches.sort((a, b) => a.start - b.start)) {
+    addUnknown(source.slice(cursor, match.start));
+    items.push(match.name);
+    cursor = match.end;
+  }
+  addUnknown(source.slice(cursor));
+  return [...new Map(items.map((item) => [item.toLowerCase(), item])).values()];
+}
+
 function parseSkillLines(lines) {
   const groups = [];
   lines.forEach((rawLine) => {
@@ -121,23 +212,15 @@ function parseSkillLines(lines) {
     // Category headings are labels, not individual skills. Some PDFs place
     // the label and its values on separate lines without a colon.
     if (/^(?:front[ -]?end|back[ -]?end|devops|frameworks|tools|databases|programming languages|design tools|cloud|platforms)(?:\s*[&/]\s*(?:tools|devops|cloud|platforms|frameworks))?\s*:?$/i.test(line)) {
-      groups.push({ id: crypto.randomUUID(), name: line.replace(/:$/, '').trim(), skills: [] });
+      groups.push({ id: crypto.randomUUID(), name: line.replace(/:$/, '').trim(), source: [] });
       return;
     }
     const colonIndex = line.indexOf(':');
     const hasGroup = colonIndex > 0 && colonIndex < 45;
-    if (hasGroup || !groups.length) {
-      const value = hasGroup ? line.slice(colonIndex + 1) : line;
-      groups.push({
-        id: crypto.randomUUID(),
-        name: hasGroup ? line.slice(0, colonIndex).trim() : 'Skills',
-        skills: value.replace(BULLET_START, '').split(/[,;|•]/).map((item) => item.trim()).filter(Boolean),
-      });
-    } else {
-      groups.at(-1).skills.push(...line.replace(BULLET_START, '').split(/[,;|•]/).map((item) => item.trim()).filter(Boolean));
-    }
+    if (hasGroup || !groups.length) groups.push({ id: crypto.randomUUID(), name: hasGroup ? line.slice(0, colonIndex).trim() : 'Skills', source: [] });
+    groups.at(-1).source.push(hasGroup ? line.slice(colonIndex + 1).trim() : line);
   });
-  return groups;
+  return groups.map(({ id, name, source }) => ({ id, name, skills: splitSkillSequence(source.join(' ')) }));
 }
 
 export function parseResumeLocally(rawText) {

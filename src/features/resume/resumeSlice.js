@@ -20,10 +20,12 @@ const slice = createSlice({
     loadResumeFromLibrary(state, action) {
       const entry = action.payload;
       state.workingResume = JSON.parse(JSON.stringify(entry.resume));
+      state.extractedText = '';
       state.sourceName = entry.sourceName || '';
       state.workingSaved = false;
-      state.masterResume = entry.isMaster ? JSON.parse(JSON.stringify(entry.resume)) : null;
-      state.resumeLibrary = state.resumeLibrary.map((item) => ({ ...item, isMaster: item.resume?.id === entry.resume?.id }));
+      // Selecting a copy for review must not silently promote it to master or
+      // discard the confirmed master. Promotion happens only in saveMaster.
+      if (entry.isMaster) state.masterResume = JSON.parse(JSON.stringify(entry.resume));
     },
     updateWorkingField(state, action) {
       state.workingSaved = false;

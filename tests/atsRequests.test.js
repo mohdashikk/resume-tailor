@@ -54,6 +54,7 @@ it('reuses completed targeted edits and keeps returned copies independent', asyn
     data: { resume, matchComparison: { before: 50, after: 50, changedBullets: 1, rejectedBullets: 0, status: 'completed' } },
   }) });
   const first = await tailor(resume, jd);
+  expect(JSON.parse(fetch.mock.calls[0][1].body).payload.rewriteEntireResume).toBe(true);
   first.resume.summary = 'Changed by the user';
   expect((await tailor(resume, jd)).resume.summary).toBe(resume.summary);
   expect(fetch).toHaveBeenCalledOnce();
@@ -73,6 +74,6 @@ it('reports a tailoring timeout without a result', async () => {
   vi.useFakeTimers();
   vi.spyOn(globalThis, 'fetch').mockImplementation((_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))));
   const pending = expect(tailor(resume, jd)).rejects.toThrow(/timed out.*try again/i);
-  await vi.advanceTimersByTimeAsync(55001);
+  await vi.advanceTimersByTimeAsync(90001);
   await pending;
 });

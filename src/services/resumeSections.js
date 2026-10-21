@@ -12,7 +12,7 @@ const canonical = (value) => value.toLowerCase().replace(/&/g, 'and').replace(/\
 export function identifyHeading(line) {
   const match = String(line).trim().match(/^([^:]+?)(?:\s*:\s*(.*))?$/);
   if (!match) return null;
-  const label = canonical(match[1]);
+  const label = canonical(match[1]).replace(/\s*[-–—]\s*continued$/i, '');
   const section = Object.keys(headings).find((key) => headings[key].includes(label));
   return section ? { section, title: match[1].trim(), content: match[2]?.trim() || '' } : null;
 }
@@ -20,12 +20,21 @@ export function splitResumeSections(rawText) {
   // Repair flattened uppercase headings without splitting ordinary sentences.
   const titles = Object.values(headings).flat().sort((a, b) => b.length - a.length).map((s) => s.toUpperCase()).join('|');
   const prepared = String(rawText || '').replace(new RegExp(`(^|\\s)(${titles})(?=\\s|:|$)`, 'g'), '$1\n$2\n');
-  const sections = { header: [] }; let active = 'header';
+  const sections = { header: [] }; let active = 'header'; let previousBlank = true;
   for (const raw of prepared.split(/\r?\n/)) {
-    const line = raw.trim(); if (!line) continue;
+    const line = raw.trim();
+    if (!line) { previousBlank = true; continue; }
+    if (/^[-–—]\s*CONTINUED$/i.test(line)) continue;
+    // Page labels in imported/generated PDFs are layout chrome, not resume
+    // content. In particular they must not become education details.
+    if (/^(?:(?:[\w.-]+\s+)?resume\s+)?page\s+\d+\s+of\s+\d+$/i.test(line)) continue;
     const heading = identifyHeading(line);
-    if (heading) { active = heading.section; sections[active] ||= []; if (heading.content) sections[active].push(heading.content); }
+    // OCR can wrap a bullet at a word such as "projects". A lowercase label
+    // attached to the preceding line is prose, not a new section heading.
+    const wrappedLowercaseWord = heading && line === line.toLowerCase() && !line.includes(':') && !previousBlank;
+    if (heading && !wrappedLowercaseWord) { active = heading.section; sections[active] ||= []; if (heading.content) sections[active].push(heading.content); }
     else { sections[active] ||= []; sections[active].push(line.replace(/^:\s*/, '')); }
+    previousBlank = false;
   }
   return sections;
 }

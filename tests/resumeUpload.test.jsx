@@ -55,6 +55,8 @@ it('uses the latest upload in the existing template without mixing previous resu
     expect(preview.textContent).toContain('new@example.com');
     expect(preview.textContent).not.toContain('Previous Person');
     expect(preview.textContent).not.toContain('Old skill');
+    expect(container.querySelector('textarea[aria-label="Extracted resume text"]').value).toBe('second.pdf');
+    expect(container.textContent).toContain('Parsed 0 jobs, 0 experience bullets, and 0 education entries.');
     await act(async () => store.dispatch(jobActions.updateJob({ text: 'Requirements:\nReact and JavaScript are required for our frontend product engineering team.' })));
     analyzeAtsWithAI.mockImplementation(async (candidate, jd) => analyzeAtsLocally(candidate, jd));
     await act(async () => [...container.querySelectorAll('button')].find(button => button.textContent === 'Check ATS').click());
@@ -94,5 +96,37 @@ it('keeps source text and the saved resume when both AI and fallback parsing fai
     expect(store.getState().resume.upload.status).toBe('error');
     expect(container.textContent).toContain('Some resume fields could not be read reliably');
     expect(container.textContent).not.toContain('too_big');
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});
+
+it('replaces a one-job AI result with all locally recoverable experience entries', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  vi.stubGlobal('scrollTo', vi.fn());
+  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+  const store = configureStore({ reducer: { resume: resumeReducer, job: jobReducer, tailoring: tailoringReducer } });
+  const raw = `Alex Morgan
+EXPERIENCE
+UI Designer - First Studio Jul 2023 - Present
+Designed accessible application screens for customers and product teams.
+UI Designer - Second Studio Sep 2022 - May 2023
+Created responsive prototypes and design system components.
+UI Designer - Third Studio Dec 2020 - Sep 2022
+Worked with engineers to implement usable product interfaces.`;
+  extractResumeText.mockResolvedValue({ text: raw, warnings: [] });
+  const incomplete = blankResume();
+  incomplete.name = 'Alex Morgan';
+  incomplete.experience = [{ id: 'one', role: 'UI Designer', company: 'First Studio', location: '', startDate: 'Jul 2023', endDate: 'Present', bullets: [] }];
+  parseResumeWithAI.mockResolvedValue(incomplete);
+  const container = document.createElement('div'); document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<Provider store={store}><App /></Provider>));
+    const input = container.querySelector('input[accept^=".pdf"]');
+    Object.defineProperty(input, 'files', { configurable: true, value: [{ name: 'complete.pdf' }] });
+    await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
+    expect(store.getState().resume.workingResume.experience.map((entry) => [entry.company, entry.bullets.length])).toEqual([
+      ['First Studio', 1], ['Second Studio', 1], ['Third Studio', 1],
+    ]);
+    expect(container.textContent).toContain('Parsed 3 jobs, 3 experience bullets');
   } finally { await act(async () => root.unmount()); container.remove(); }
 });

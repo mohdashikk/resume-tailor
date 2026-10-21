@@ -61,11 +61,48 @@ export function pdfPageNeedsOcr(text) {
 
 export function cleanOcrText(text) {
   return String(text || '')
-    .replace(/\bUl(?=\/UX|\s+Designer|\s+design|\s+delivery|\s+layouts?)/g, 'UI')
+    .replace(/\bUl\b/g, 'UI')
     .replace(/React\.Js\b/g, 'React.js')
     .replace(/\bSaas\b/g, 'SaaS')
+    .replace(/(?<=\p{L})-[ \t]+(?=\p{L})/gu, '-')
     .replace(/[ \t]+\n/g, '\n')
     .trim();
+}
+
+export function mergePdfTextLayers(textLayer, ocrText) {
+  const base = String(ocrText || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  const source = String(textLayer || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  const key = (line) => line.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const words = (line) => new Set((key(line).match(/[a-z0-9]{3,}/g) || []));
+  const nearWord = (left, right) => {
+    if (left === right) return true;
+    if (Math.abs(left.length - right.length) > 1) return false;
+    let a = 0; let b = 0; let edits = 0;
+    while (a < left.length && b < right.length) {
+      if (left[a] === right[b]) { a += 1; b += 1; continue; }
+      if (++edits > 1) return false;
+      if (left.length >= right.length) a += 1;
+      if (right.length >= left.length) b += 1;
+    }
+    return edits + Number(a < left.length || b < right.length) <= 1;
+  };
+  for (const line of source) {
+    const normalized = key(line);
+    if (normalized.length < 15) continue;
+    const index = base.findIndex((existing) => {
+      const candidate = key(existing);
+      if (!candidate) return false;
+      if (candidate === normalized) return true;
+      if (Math.min(candidate.length, normalized.length) >= 15
+        && Math.min(candidate.length, normalized.length) / Math.max(candidate.length, normalized.length) >= 0.3
+        && (candidate.includes(normalized) || normalized.includes(candidate))) return true;
+      const sourceWords = words(line); const candidateWords = words(existing);
+      return sourceWords.size >= 3 && [...sourceWords].filter((word) => [...candidateWords].some((candidateWord) => nearWord(word, candidateWord))).length / sourceWords.size >= 0.7;
+    });
+    if (index < 0) base.push(line);
+    else if (normalized.length > key(base[index]).length * 1.2 && !/\ufffd/.test(line)) base[index] = line;
+  }
+  return base.join('\n');
 }
 
 async function createOcrReader(onProgress) {
@@ -125,14 +162,27 @@ export async function extractResumeText(file, onProgress = () => {}) {
         const page = await document.getPage(pageNumber);
         const content = await page.getTextContent();
         let pageText = pdfItemsToText(content.items);
-        if (pdfPageNeedsOcr(pageText) && pageNumber <= MAX_OCR_PAGES) {
+        // A PDF can contain plenty of selectable header/skills text while its
+        // experience bullets are vector outlines. Character count alone cannot
+        // prove the page is complete, so inspect every bounded page with OCR.
+        if (pageNumber <= MAX_OCR_PAGES) {
           try {
             ocr ||= await createOcrReader(onProgress);
             const ocrText = await ocr.recognize(await renderPdfPage(page));
-            if (ocrText.replace(/\s/g, '').length >= pageText.replace(/\s/g, '').length) pageText = ocrText;
-            warnings.push(`Page ${pageNumber} had an incomplete text layer and was recovered with OCR.`);
+            const layerLength = pageText.replace(/\s/g, '').length;
+            const ocrLength = ocrText.replace(/\s/g, '').length;
+            if (ocrLength >= Math.max(40, layerLength * 1.15) || pdfPageNeedsOcr(pageText)) {
+              pageText = mergePdfTextLayers(pageText, ocrText);
+              warnings.push(`Page ${pageNumber} contained text not fully available in its PDF text layer. OCR was used; review its reading order.`);
+            } else if (ocrLength >= 40) {
+              const merged = mergePdfTextLayers(ocrText, pageText);
+              if (merged.length > pageText.length) warnings.push(`Page ${pageNumber} included additional OCR-only text; review its reading order.`);
+              pageText = merged;
+            }
           } catch (error) {
-            warnings.push(`OCR could not recover page ${pageNumber}: ${error.message}`);
+            if (pdfPageNeedsOcr(pageText)) {
+              throw new Error(`Page ${pageNumber} has an incomplete text layer and OCR could not recover it. No partial resume was saved. Try again when OCR is available, or upload a text-based PDF/DOCX.`);
+            }
           }
         } else if (pdfPageNeedsOcr(pageText)) {
           skippedOcrPages += 1;

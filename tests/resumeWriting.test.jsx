@@ -10,7 +10,7 @@ import tailoringReducer from '../src/features/tailoring/tailoringSlice';
 import { blankResume } from '../src/services/resumeValidation';
 import { analyzeAtsLocally } from '../src/services/localAtsService';
 import { tailoringActions } from '../src/features/tailoring/tailoringSlice';
-import { buildAnalysis } from '../src/services/atsAnalysis';
+import { buildAnalysis, validateAnalysis } from '../src/services/atsAnalysis';
 import { analyzeAtsWithAI, tailorResumeWithAI } from '../src/services/aiService';
 import { downloadResumePdf } from '../src/services/pdfService';
 
@@ -40,8 +40,9 @@ beforeEach(async () => {
   root = createRoot(container);
   await act(async () => root.render(<Provider store={store}><App /></Provider>));
   await click('Check ATS');
-  await click('Check ATS Score');
-  await click('Tailor for this job');
+  await click('Check ATS Score & Keywords');
+  await act(async () => container.querySelector('[aria-label="Choose keywords to prioritize"] input').click());
+  await click('Rewrite resume with AI');
 });
 afterEach(async () => {
   await act(async () => root.unmount()); container.remove();
@@ -50,7 +51,10 @@ afterEach(async () => {
 it('starts the full rewrite directly after the match check', () => {
   expect(tailorResumeWithAI).toHaveBeenCalledTimes(1);
   expect(tailorResumeWithAI.mock.calls[0].slice(0, 4)).toEqual([source, store.getState().job.text, 'Example', 'Frontend Engineer']);
-  expect(container.textContent).toContain('Building your tailored resume');
+  expect(container.textContent).toContain('Rewrite Experience with AI');
+  expect(container.textContent).toContain('Review and align skills');
+  expect(container.textContent).toContain('Check the tailored ATS score');
+  expect(container.querySelector('[aria-label="Base resume preview"]')).toBeTruthy();
   expect(store.getState().tailoring.status).toBe('loading');
 });
 it('reports PDF rendering failures without changing the generated resume', async () => {
@@ -67,11 +71,36 @@ it('reports PDF rendering failures without changing the generated resume', async
 it('shows the rewritten resume and review controls as soon as generation completes', async () => {
   await act(async () => resolveAI(result));
   expect(container.querySelector('[aria-label="Tailored resume preview"]').textContent).toContain(result.resume.summary);
+  expect(container.querySelector('[aria-label="Tailored resume editor"]')).toBeTruthy();
   expect(container.textContent).toContain('ATS Match Score');
   expect(container.textContent).toContain('Cover Letter');
   expect(container.textContent).toContain('Rewrite Resume');
   expect(document.body.textContent).not.toContain('Review AI edits');
   expect(container.textContent).toContain('Export PDF');
+  expect(store.getState().resume.masterResume).toEqual(source);
+});
+it('maps tailored experience and project bullets into the editable resume and live preview', async () => {
+  result.resume = {
+    ...result.resume,
+    experience: [{ id: 'work', masterId: 'work', role: 'Frontend Developer', company: 'Example Co', location: 'Remote', startDate: '2022', endDate: 'Present', bullets: [{ id: 'work-bullet', text: 'Developed responsive React interfaces and integrated REST APIs.' }] }],
+    projects: [{ id: 'project', masterId: 'project', name: 'Customer portal', subtitle: 'Web application', link: '', startDate: '', endDate: '', bullets: [{ id: 'project-bullet', text: 'Built reusable interface components for customer workflows.' }] }],
+    education: [{ id: 'education', institution: 'Example University', qualification: 'BSc Computer Science', location: '', startDate: '2018', endDate: '2022', details: '' }],
+    certifications: [{ id: 'certification', name: 'Web Development', issuer: 'Example Institute', date: '2023' }],
+  };
+  await act(async () => resolveAI(result));
+  const editor = container.querySelector('[aria-label="Tailored resume editor"]');
+  const experience = [...editor.querySelectorAll('textarea')].find(field => field.value.includes('Developed responsive React interfaces'));
+  const project = [...editor.querySelectorAll('textarea')].find(field => field.value.includes('Built reusable interface components'));
+  expect(experience).toBeTruthy();
+  expect(project).toBeTruthy();
+  expect(editor.textContent).toContain('Example University');
+  expect([...editor.querySelectorAll('input')].some(field => field.value === 'Web Development')).toBe(true);
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(experience, 'Developed accessible React interfaces and integrated REST APIs.');
+    experience.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  expect(store.getState().tailoring.current.resume.experience[0].bullets[0].text).toContain('accessible React interfaces');
+  expect(container.querySelector('[aria-label="Tailored resume preview"]').textContent).toContain('accessible React interfaces');
   expect(store.getState().resume.masterResume).toEqual(source);
 });
 it('shows a retryable error when generation fails', async () => {
@@ -88,7 +117,7 @@ it('rejects malformed generated data before displaying a result', async () => {
 it('shows before-and-after estimates and explains unavailable targeted editing', async () => {
   await act(async () => resolveAI({ ...result, matchComparison: { before: 80, after: 80, changedBullets: 0, rejectedBullets: 0, status: 'unavailable' } }));
   expect(container.textContent).toContain('ATS Match Score');
-  expect(container.textContent).toContain('Original descriptions were retained');
+  expect(container.textContent).toContain('Some resume descriptions need a fuller source-backed rephrase');
   expect(store.getState().tailoring.current.matchComparison.status).toBe('unavailable');
 });
 
@@ -105,18 +134,45 @@ it('updates review scores and keywords after experience edits and switches base 
   expect(store.getState().resume.masterResume).toEqual(source);
 });
 
-it('rewrites the current copy using the validated rubric and preserves the master', async () => {
+it('retries the current copy against the original evidence and preserves the master', async () => {
   await act(async () => resolveAI(result));
   const checks = analyzeAtsWithAI.mock.calls.length;
   await click('Rewrite Resume');
   expect(analyzeAtsWithAI.mock.calls.length).toBe(checks);
-  expect(tailorResumeWithAI.mock.calls.at(-1)[0]).toEqual(result.resume);
-  expect(tailorResumeWithAI.mock.calls.at(-1)[5]).toEqual({ force: true, confirmedSkills: [], verifiedCareerProfile: source });
+  expect(tailorResumeWithAI.mock.calls.at(-1)[0]).toEqual(source);
+  expect(tailorResumeWithAI.mock.calls.at(-1)[5]).toEqual({ force: true, confirmedSkills: [], verifiedCareerProfile: source, existingTailoredResume: result.resume });
   expect(container.textContent).toContain('Rewriting resume…');
   await act(async () => resolveAI(result));
   expect(container.textContent).toContain('Rewrite Resume');
   expect(store.getState().resume.masterResume).toEqual(source);
   expect(container.textContent).not.toContain('Fit to one page');
+});
+it('keeps the tailored draft and shows a cooldown when Groq rate-limits a retry', async () => {
+  await act(async () => resolveAI(result));
+  await click('Rewrite Resume');
+  const error = new Error('Groq is rate-limited. Your tailored draft was not changed. Please wait 125 seconds.');
+  error.code = 'AI_RATE_LIMITED';
+  error.retryAfterSeconds = 125;
+  await act(async () => rejectAI(error));
+  expect(store.getState().tailoring.current.resume).toEqual(result.resume);
+  expect(store.getState().resume.masterResume).toEqual(source);
+  expect(container.textContent).toContain('Groq rate limit · retry in 2:05');
+  expect([...container.querySelectorAll('button')].find(button => button.textContent.includes('Groq rate limit')).disabled).toBe(true);
+  expect(container.querySelector('[role="alert"]').textContent).toContain('draft was not changed');
+});
+it('can restart rewriting from the original parsed resume instead of a stale tailored draft', async () => {
+  await act(async () => resolveAI(result));
+  await click('Rewrite Resume');
+  const secondDraft = { ...result, resume: { ...result.resume, id: 'second-draft', summary: 'Second-pass rewrite.' } };
+  await act(async () => resolveAI(secondDraft));
+  expect(store.getState().tailoring.current.sourceResume).toEqual(source);
+  expect(() => validateAnalysis(store.getState().tailoring.current.analysis, source, store.getState().job.text)).not.toThrow();
+  await click('Rewrite from original resume');
+  expect(tailorResumeWithAI.mock.calls.at(-1)[0]).toEqual(source);
+  expect(tailorResumeWithAI.mock.calls.at(-1)[0]).not.toEqual(secondDraft.resume);
+  await act(async () => resolveAI(result));
+  expect(store.getState().tailoring.current.sourceResume).toEqual(source);
+  expect(store.getState().resume.masterResume).toEqual(source);
 });
 it('shows all keywords without application category filters', async () => {
   await act(async () => resolveAI(result));

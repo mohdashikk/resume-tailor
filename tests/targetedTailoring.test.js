@@ -1,13 +1,41 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { blankResume } from '../src/services/resumeValidation.js';
 import { analyzeAtsLocally } from '../src/services/localAtsService.js';
-import { alignBulletKeywords, applyTargetedEdits, isSafeBulletEdit, selectTailoringBullets, resolveSkillPlacements, planKeywordDistribution, respectsKeywordPlacement, finishKeywordDistribution, isSupportedSummary, applyBulletMerges } from '../src/services/targetedTailoringService.js';
+import { alignBulletKeywords, applyTargetedEdits, isSafeBulletEdit, preservesProtectedFacts, selectTailoringBullets, resolveSkillPlacements, planKeywordDistribution, respectsKeywordPlacement, finishKeywordDistribution, isSupportedSummary, applyBulletMerges, sameResumeWording, isMeaningfulBulletRewrite, hasUnsupportedOutcomeClaims } from '../src/services/targetedTailoringService.js';
 import { handleAIRequest } from '../api/ai.js';
 const master = { ...blankResume(), name: 'Alex', title: 'Developer', summary: 'Web developer.', skillGroups: [{ id: 's', name: 'Skills', skills: ['Git', 'React.js'] }], experience: [{ id: 'work', role: 'Developer', company: 'Acme', location: '', startDate: '2022', endDate: 'Present', bullets: [{ id: 'b', text: 'Built React.js interfaces with 20% improvement.' }, { id: 'other', text: 'Supported clients.' }] }] };
 const jd = 'Requirements:\nReact is required for our frontend product engineering team building web interfaces.';
 const input = { action: 'tailor', payload: { masterResume: master, jobDescription: jd } };
 afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 describe('targeted tailoring', () => {
+  it('allows equivalent usability wording but blocks newly claimed results', () => {
+    expect(hasUnsupportedOutcomeClaims('Defined flows to improve usability.', 'Mapped flows to enhance usability.')).toBe(false);
+    expect(hasUnsupportedOutcomeClaims('Defined user flows.', 'Mapped flows to enhance usability.')).toBe(true);
+    expect(hasUnsupportedOutcomeClaims('Defined flows to improve usability.', 'Mapped flows to boost revenue.')).toBe(true);
+  });
+  it('retains source metrics and named tools even when a semantic reviewer approves new prose', () => {
+    expect(preservesProtectedFacts('Built React interfaces in Figma and improved load time by 20%.', 'Crafted Figma interfaces with React, improving load time by 20%.')).toBe(true);
+    expect(preservesProtectedFacts('Built React interfaces in Figma and improved load time by 20%.', 'Crafted React interfaces, improving load time by 20%.')).toBe(false);
+    expect(preservesProtectedFacts('Built React interfaces in Figma and improved load time by 20%.', 'Crafted Figma interfaces with React, improving load time by 30%.')).toBe(false);
+  });
+  it('does not count punctuation or hyphen changes as experience rephrasing', () => {
+    expect(sameResumeWording('Designed role-based UI experiences.', 'Designed role‑based UI experiences')).toBe(true);
+    expect(sameResumeWording('Designed responsive interfaces.', 'Crafted responsive interfaces.')).toBe(false);
+  });
+  it('does not count a lone opening-verb substitution in a full experience bullet', () => {
+    expect(isMeaningfulBulletRewrite('Conducted usability testing and design reviews.', 'Performed usability testing and design reviews.')).toBe(false);
+    expect(isMeaningfulBulletRewrite('Designed role-based UI experiences and authentication flows.', 'Crafted authentication flows and role-based UI experiences.')).toBe(true);
+    expect(isMeaningfulBulletRewrite('Built React interfaces.', 'Developed React interfaces.')).toBe(true);
+    expect(isMeaningfulBulletRewrite('Defined user flows, interaction patterns, and information architecture to improve overall product usability.', 'Defined user flows, interaction patterns, and information architecture to enhance product usability.')).toBe(false);
+    expect(isMeaningfulBulletRewrite('Defined user flows, interaction patterns, and information architecture to improve overall product usability.', 'Mapped information architecture, user flows, and interaction patterns to improve overall product usability.')).toBe(true);
+  });
+  it('retains user research as a distinct verified responsibility', () => {
+    const original = 'Led UX design from discovery and user research to high-fidelity Figma prototypes.';
+    expect(preservesProtectedFacts(original, 'Led UX design, delivering discovery research and high-fidelity Figma prototypes.')).toBe(false);
+    expect(preservesProtectedFacts(original, 'Led UX design through user research, discovery, and high-fidelity Figma prototypes.')).toBe(true);
+    expect(preservesProtectedFacts('Led end-to-end UX design through user research.', 'Led UX design through user research.')).toBe(false);
+    expect(preservesProtectedFacts('Led end-to-end UX design through user research.', 'Led full-cycle UX design through user research.')).toBe(true);
+  });
   it('shortens summaries without adding claims or changing tenure', () => {
     const summary = 'Frontend developer with 6+ years building React interfaces and backend tools.';
     expect(isSupportedSummary(summary, 'Frontend developer with 6+ years building React interfaces.')).toBe(true);
@@ -65,7 +93,7 @@ describe('targeted tailoring', () => {
     expect(result.body.data.resume.experience[0].bullets[0].text).not.toMatch(/^With /);
     expect(JSON.parse(fetch.mock.calls[1][1].body).response_format.json_schema.name).toBe('experience_writing_repair');
   });
-  it('repairs legacy keyword-prefixed experience and shortens education without changing qualifications', async () => {
+  it('repairs legacy keyword-prefixed experience without dropping education context', async () => {
     const source = structuredClone(master);
     source.experience[0].bullets[0].text = 'With redux saga, built React interfaces.';
     source.education = [{ id: 'education', qualification: 'Diploma, Web Technologies', institution: 'Creative Institute', location: 'Kerala', startDate: '2018', endDate: '2019', details: 'Studied web technologies and interface development with practical projects.' }];
@@ -74,7 +102,7 @@ describe('targeted tailoring', () => {
       .mockResolvedValueOnce(response({ edits: [{ sourceId: 'experience:0:0', text: 'Built React interfaces with Redux Saga.' }] }));
     const result = await handleAIRequest({ action: 'tailor', payload: { masterResume: source, jobDescription: jd + '\nRedux Saga is required.' } }, { GROQ_API_KEY: 'legacy-polish-test' });
     expect(result.body.data.resume.experience[0].bullets[0].text).toBe('Built React interfaces with Redux Saga.');
-    expect(result.body.data.resume.education[0]).toEqual({ ...source.education[0], details: 'Web technologies and interface development.' });
+    expect(result.body.data.resume.education[0]).toEqual(source.education[0]);
   });
   it('spreads role skills across bullets and leaves other tools in Skills', () => {
     const selected = [];
@@ -104,11 +132,11 @@ describe('targeted tailoring', () => {
   });
   it('accepts a natural paraphrase only after separate evidence review', async () => {
     const response = data => ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(data) } }] }) });
-    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response({ summary: 'Web developer experienced in TypeScript.', edits: [{ sourceId: 'experience:0:0', text: 'Produced React interfaces with a 20% improvement using TypeScript.' }] })).mockResolvedValueOnce(response({ approvedIds: ['experience:0:0'], summarySupported: true }));
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response({ summary: 'Web developer experienced in TypeScript.', edits: [{ sourceId: 'experience:0:0', text: 'Engineered React interfaces with a 20% improvement using TypeScript.' }] })).mockResolvedValueOnce(response({ approvedIds: ['experience:0:0'], summarySupported: true }));
     const result = await handleAIRequest({ action: 'tailor', payload: { masterResume: master, jobDescription: jd + '\nTypeScript is preferred.', confirmedSkills: [{ term: 'typescript', entryId: 'work' }] } }, { GROQ_API_KEY: 'paraphrase-review-test' });
     expect(result.status).toBe(200);
     expect(result.body.data.resume.summary).toBe(master.summary);
-    expect(result.body.data.resume.experience[0].bullets[0].text).toContain('Produced');
+    expect(result.body.data.resume.experience[0].bullets[0].text).toContain('Engineered');
     expect(result.body.data.matchComparison).toMatchObject({ changedBullets: 1, rejectedBullets: 0 });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
@@ -130,12 +158,23 @@ describe('targeted tailoring', () => {
     expect(master.skillGroups.flatMap(group => group.skills)).not.toContain('typescript');
     expect(result.body.data.matchComparison.after).toBeGreaterThanOrEqual(result.body.data.matchComparison.before);
   });
-  it('does not apply selected skills when AI fails', async () => {
+  it('preserves source roles and keeps an unassigned user-confirmed skill in Skills when AI fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Offline'));
     const result = await handleAIRequest({ action: 'tailor', payload: { masterResume: master, jobDescription: jd + '\nTypeScript is preferred.', confirmedSkills: [{ term: 'typescript', entryId: '' }] } }, { GROQ_API_KEY: 'failed-selected-test' });
-    expect(result.status).toBe(502);
-    expect(result.body.error).toContain('not applied');
-    expect(result.body.data).toBeUndefined();
+    expect(result.status).toBe(200);
+    expect(result.body.data.matchComparison.status).toBe('unavailable');
+    expect(result.body.data.resume.experience[0]).toMatchObject({
+      id: master.experience[0].id,
+      role: master.experience[0].role,
+      company: master.experience[0].company,
+      startDate: master.experience[0].startDate,
+      endDate: master.experience[0].endDate,
+    });
+    expect(result.body.data.resume.experience[0].bullets.map(bullet => bullet.text)).toEqual([
+      'Built React interfaces with 20% improvement.',
+      master.experience[0].bullets[1].text,
+    ]);
+    expect(result.body.data.resume.skillGroups.flatMap(group => group.skills).map(skill => skill.toLowerCase())).toContain('typescript');
   });
   it('rejects skills outside the JD and new role assignments', async () => {
     const result = await handleAIRequest({ action: 'tailor', payload: { masterResume: master, jobDescription: jd, confirmedSkills: [{ term: 'Python', entryId: 'invented' }] } }, { GROQ_API_KEY: 'invalid-selection' });
@@ -192,6 +231,14 @@ it('aligns JD spelling within experience without borrowing unsupported skills', 
   expect(alignBulletKeywords('Built React.js pages integrating RESTful APIs with HTML5 and CSS3.', 'React, REST APIs, HTML, CSS, TypeScript')).toBe('Built React pages integrating REST APIs with HTML and CSS.');
   expect(alignBulletKeywords('Built React Native apps.', 'React, Java, TypeScript')).toBe('Built React Native apps.');
   expect(isSafeBulletEdit('Built HTML5 pages with 20% improvement.', 'Developed HTML pages with 20% improvement.')).toBe(true);
+});
+
+it('accepts safe action-verb and common resume noun equivalents', () => {
+  expect(isSafeBulletEdit('Made components for a task app using React.', 'Developed React components for a task application.')).toBe(true);
+  expect(isSafeBulletEdit('Fixed frontend issues.', 'Resolved frontend issues.')).toBe(true);
+  expect(isSafeBulletEdit('Wrote support notes.', 'Authored support documentation.')).toBe(true);
+  expect(isSafeBulletEdit('Worked with developers to fix usability issues.', 'Collaborated with developers to resolve usability issues.')).toBe(true);
+  expect(isSafeBulletEdit('Completed a capstone project on accessible web interfaces.', 'Completed a capstone project focused on accessible web interfaces.')).toBe(true);
 });
 
 

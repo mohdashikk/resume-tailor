@@ -5,7 +5,7 @@ const REQUEST_TIMEOUT = 55000;
 
 async function postAI(action, payload) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+  const timeout = setTimeout(() => controller.abort(), action === 'tailor' ? 90000 : REQUEST_TIMEOUT);
   try {
     const response = await fetch('/api/ai', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -26,6 +26,7 @@ async function postAI(action, payload) {
         ? 'The AI endpoint is not running. Start the app with npm run dev.'
         : `The AI endpoint failed with HTTP ${response.status}. Check the server console.`));
       error.code = body.code || 'AI_ERROR';
+      if (Number.isFinite(body.retryAfterSeconds)) error.retryAfterSeconds = Math.max(0, body.retryAfterSeconds);
       throw error;
     }
     if (!body.data) {
@@ -84,10 +85,10 @@ export const analyzeAtsWithAI = async (resume, jobDescription, { force = false, 
 };
 const tailoredCache = new Map();
 const pendingTailoring = new Map();
-export const tailorResumeWithAI = async (masterResume, jobDescription, company, jobTitle, analysis, { force = false, confirmedSkills = [], verifiedCareerProfile } = {}) => {
-  const payload = { masterResume, jobDescription, company, jobTitle, analysis, confirmedSkills, ...(verifiedCareerProfile ? { verifiedCareerProfile } : {}) };
+export const tailorResumeWithAI = async (masterResume, jobDescription, company, jobTitle, analysis, { force = false, confirmedSkills = [], selectedKeywords = [], verifiedCareerProfile, existingTailoredResume } = {}) => {
+  const payload = { masterResume, jobDescription, company, jobTitle, analysis, confirmedSkills, selectedKeywords, rewriteEntireResume: true, ...(verifiedCareerProfile ? { verifiedCareerProfile } : {}), ...(existingTailoredResume ? { existingTailoredResume } : {}) };
   if (force || confirmedSkills.length) return postAI('tailor', payload);
-  const key = JSON.stringify(['role-evidence-v1', masterResume, verifiedCareerProfile, jobDescription, company, jobTitle]);
+  const key = JSON.stringify(['full-resume-rewrite-v4', masterResume, existingTailoredResume, verifiedCareerProfile, jobDescription, company, jobTitle, selectedKeywords]);
   if (tailoredCache.has(key)) return structuredClone(tailoredCache.get(key));
   if (!pendingTailoring.has(key)) {
     const pending = postAI('tailor', payload).then(result => {

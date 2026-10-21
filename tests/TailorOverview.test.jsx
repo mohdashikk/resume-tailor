@@ -22,3 +22,19 @@ it('keeps selection pending and rewrites without a placement dropdown', async ()
     expect(onRetailor).toHaveBeenCalledWith([{ term: 'TypeScript' }]);
   } finally { await act(async () => root.unmount()); host.remove(); }
 });
+
+it('pauses retry during a Groq rate limit and shows the remaining wait', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  const resume = { ...blankResume(), id: 'current' };
+  const onRetailor = vi.fn();
+  const host = document.createElement('div'); document.body.append(host); const root = createRoot(host);
+  try {
+    await act(async () => root.render(<TailorOverview resume={resume} jd="Example job description" analysis={{ score: 0, match: { matched: [], missing: [], uncertain: [] } }} onRetailor={onRetailor} retrySecondsRemaining={125} retailorError="Groq is rate-limited. Your draft was not changed." />));
+    const retry = [...host.querySelectorAll('button')].find(button => button.textContent.includes('Groq rate limit'));
+    expect(retry.disabled).toBe(true);
+    expect(retry.textContent).toContain('2:05');
+    expect(host.querySelector('[role="alert"]').textContent).toContain('draft was not changed');
+    await act(async () => root.render(<TailorOverview resume={resume} jd="Example job description" analysis={{ score: 0, match: { matched: [], missing: [], uncertain: [] } }} onRetailor={onRetailor} retrySecondsRemaining={0} />));
+    expect([...host.querySelectorAll('button')].find(button => button.textContent.includes('Rewrite Resume')).disabled).toBe(false);
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});

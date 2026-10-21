@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { analyzeAtsLocally } from '../src/services/localAtsService.js';
 import { parseResumeHybrid } from '../src/services/hybridResumeParser.js';
+import { parseResumeLocally } from '../src/services/localResumeParser.js';
 import { blankResume } from '../src/services/resumeValidation.js';
 import { analyzeAtsWithAI } from '../src/services/aiService.js';
 
@@ -81,12 +82,12 @@ Requirements:
 });
 
 describe('hybrid resume parsing', () => {
-  it('parses recognizable sections without an AI call', async () => {
-    const semantic = vi.fn();
+  it('checks recognizable sections with AI because headings alone cannot prove complete extraction', async () => {
+    const semantic = vi.fn(async (source) => parseResumeLocally(source));
     const result = await parseResumeHybrid('Asha Rao\nFrontend Developer\nasha@example.com\nSkills\nReact, JavaScript\nEducation\nBachelor of Science\nExample University', semantic);
     expect(result.name).toBe('Asha Rao');
     expect(result.skillGroups.flatMap((group) => group.skills)).toContain('React');
-    expect(semantic).not.toHaveBeenCalled();
+    expect(semantic).toHaveBeenCalledOnce();
   });
 
   it('uses AI for ambiguous layout and retains local data if unavailable', async () => {
@@ -95,5 +96,35 @@ describe('hybrid resume parsing', () => {
     expect(semantic).toHaveBeenCalledOnce();
     expect(result.contact.email).toBe('asha@example.com');
     expect(result.ambiguities.join(' ')).toContain('clarification was unavailable');
+  });
+
+  it('refuses a semantic parse that omits source experience bullets', async () => {
+    const raw = 'Alex Morgan\nUI Designer\nExperience\nUI Designer | Alpha Studio | Jan 2022 - Present\n• Designed accessible interfaces.\n• Conducted usability tests.';
+    const semantic = vi.fn(async (source) => {
+      const parsed = parseResumeLocally(source);
+      parsed.experience[0].bullets.pop();
+      return parsed;
+    });
+    const result = await parseResumeHybrid(raw, semantic);
+    expect(result.experience[0].bullets).toHaveLength(2);
+    expect(result.ambiguities.join(' ')).toContain('AI omitted source experience');
+  });
+
+  it('restores an education entry omitted by the API before the upload reaches the editor', async () => {
+    const raw = `Alex Morgan
+Education
+Bachelor of Arts (BA) — Distance Education Expected: July 2026
+Final Year Student
+Diploma in Multimedia Arts 2018 - 2019
+Image Creative Education, Kerala`;
+    const result = await parseResumeHybrid(raw, async (source) => {
+      const candidate = parseResumeLocally(source);
+      candidate.education = [candidate.education[1]];
+      return candidate;
+    });
+    expect(result.education.map((entry) => entry.qualification)).toEqual([
+      'Bachelor of Arts (BA) — Distance Education',
+      'Diploma in Multimedia Arts',
+    ]);
   });
 });

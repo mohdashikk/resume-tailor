@@ -1,5 +1,5 @@
 import { containsTerm, normalizeAliases, normalizeText } from './atsAnalysis.js';
-import { placementScore, isSupportedSummary, metricClaims, hasKeywordPreface } from './targetedTailoringService.js';
+import { placementScore, isSafeBulletEdit, metricClaims, preservesMetrics, preservesProtectedFacts, hasUnsupportedNamedClaims, hasUnsupportedOutcomeClaims, hasKeywordPreface } from './targetedTailoringService.js';
 import { cleanKeywordTerms } from './jobKeywords.js';
 
 const positive = text => !/\b(?:no|not|without|never|lack\w*)\b/i.test(text);
@@ -77,7 +77,19 @@ export function validateRoleRewrite(role, rewrite) {
     // independent of any model claim that its own rewrite is factual.
     const original = evidence.map(source => source.text).join(' ');
     const technologies = roleTechnologies(role);
-    if (!isSupportedSummary(original, bullet.text, technologies.filter(term => evidence.some(source => contains(source.text, term))))) issues.push(`bullet:${index}:unsupported_claim_or_metric`);
+    const supportedTerms = technologies.filter(term => evidence.some(source => contains(source.text, term)));
+    // A proposed bullet must retain its cited source details, not merely avoid
+    // inventing new ones. A subset of the source words can silently drop the
+    // candidate's actual work while still looking like a safe summary.
+    if (!preservesProtectedFacts(original, bullet.text)) issues.push(`bullet:${index}:dropped_source_tool_or_metric`);
+    if (!isSafeBulletEdit(original, bullet.text, supportedTerms)) {
+      // Named tools, ownership claims and metrics are deterministic hard stops.
+      // More natural professional paraphrases receive a separate evidence-only
+      // review instead of being discarded merely for using different wording.
+      if (!preservesMetrics(original, bullet.text, supportedTerms) || hasUnsupportedNamedClaims(original, bullet.text, supportedTerms)) issues.push(`bullet:${index}:unsupported_claim_or_metric`);
+      else if (hasUnsupportedOutcomeClaims(original, bullet.text)) issues.push(`bullet:${index}:unsupported_outcome_claim`);
+      else issues.push(`bullet:${index}:needs_semantic_review`);
+    }
     const key = normalizeAliases(bullet.text).replace(/[^a-z0-9 ]/g, '');
     if (seen.has(key)) issues.push(`bullet:${index}:duplicate`);
     seen.add(key);
@@ -85,6 +97,12 @@ export function validateRoleRewrite(role, rewrite) {
   }
   // Qualifications and history cannot be changed by this output schema. Also
   // preserve all original numerical achievements when condensing a role.
+  for (const source of role.sources.filter(source => source.origin === 'resume' && source.text.trim())) {
+    if (!rewrite.tailored_bullets.some(bullet => bullet.evidence_references.includes(source.id))) {
+      issues.push('role:omitted_source_bullet');
+      break;
+    }
+  }
   const proposed = rewrite.tailored_bullets.map(bullet => bullet.text).join(' ');
   const originalMetrics = metricClaims(role.original_bullets.join(' '), roleTechnologies(role));
   const proposedMetrics = metricClaims(proposed, roleTechnologies(role));
@@ -100,25 +118,28 @@ export function assertSourceHistory(original, candidate) {
   for (const section of ['experience', 'projects']) {
     if (original[section].length !== candidate[section].length) throw new Error('The generated resume changed historical entries.');
     original[section].forEach((entry, index) => {
-      for (const field of ['id', 'masterId', 'role', 'company', 'name', 'startDate', 'endDate', 'location']) {
+      for (const field of ['id', 'masterId', 'role', 'company', 'name', 'subtitle', 'link', 'startDate', 'endDate', 'location']) {
         if (entry[field] !== candidate[section][index][field]) throw new Error('The generated resume changed a historical fact.');
       }
     });
   }
-  for (const field of ['name', 'contact', 'links', 'certifications']) if (JSON.stringify(original[field]) !== JSON.stringify(candidate[field])) throw new Error('The generated resume changed identity or credentials.');
+  for (const field of ['name', 'title', 'contact', 'links', 'certifications', 'languages', 'projectSectionTitle']) if (JSON.stringify(original[field]) !== JSON.stringify(candidate[field])) throw new Error('The generated resume changed identity or credentials.');
   if (original.education.length !== candidate.education.length) throw new Error('The generated resume changed qualifications.');
   original.education.forEach((entry, index) => {
-    for (const field of ['qualification', 'institution', 'startDate', 'endDate']) if (entry[field] !== candidate.education[index][field]) throw new Error('The generated resume changed a qualification.');
+    for (const field of ['id', 'qualification', 'institution', 'location', 'startDate', 'endDate']) if (entry[field] !== candidate.education[index][field]) throw new Error('The generated resume changed a qualification.');
   });
 }
 
-export function applyRoleRewrites(resume, evidence, rewrites) {
+export function applyRoleRewrites(resume, evidence, rewrites, approvedParaphrases = new Set()) {
   const seen = new Set(), decisions = new Map();
   for (const rewrite of rewrites) {
-    const role = evidence.roles.find(role => role.role_id === rewrite.role_id && role.relevant);
+    const role = evidence.roles.find(role => role.role_id === rewrite.role_id);
     if (!role || seen.has(rewrite.role_id)) throw new Error('Role output could not be linked uniquely to the evidence profile.');
     seen.add(rewrite.role_id);
-    const issues = validateRoleRewrite(role, rewrite);
+    const issues = validateRoleRewrite(role, rewrite).filter(issue => {
+      const index = Number.parseInt(issue.match(/^bullet:(\d+):needs_semantic_review$/)?.[1] || '-1', 10);
+      return index < 0 || !approvedParaphrases.has(`${role.role_id}:${index}`);
+    });
     decisions.set(role.role_id, issues);
     if (issues.length) continue;
     const entry = resume[role.section][role.entryIndex];

@@ -47,18 +47,19 @@ afterEach(async () => { await act(async () => root.unmount()); host.remove(); vi
 it('shows a result for a pasted posting with common Experience headings', async () => {
   await paste(posting);
   expect(store.getState().job.text).toBe(posting);
-  await click('Check ATS Score');
+  await click('Check ATS Score & Keywords →');
   expect(host.querySelector('[role="alert"]')).toBeNull();
   expect(host.textContent).toContain('RESUME MATCH REVIEW');
-  expect(host.textContent).toContain('Tailor for this job');
+  expect(host.textContent).toContain('Choose keywords for the rewrite');
+  expect(fetch).not.toHaveBeenCalled();
 });
 it('invalidates the displayed result and checks the newly pasted JD', async () => {
   await paste('Requirements:\nReact and JavaScript are required for our frontend product engineering team.');
-  await click('Check ATS Score');
+  await click('Check ATS Score & Keywords →');
   expect(host.textContent).toContain('RESUME MATCH REVIEW');
   await paste('Requirements:\nPython and SQL are required for our backend data engineering product team.');
   expect(host.textContent).not.toContain('RESUME MATCH REVIEW');
-  await click('Check ATS Score');
+  await click('Check ATS Score & Keywords →');
   expect(host.textContent).toContain('RESUME MATCH REVIEW');
   expect(host.textContent).toContain('python');
   expect(host.querySelector('[role="alert"]')).toBeNull();

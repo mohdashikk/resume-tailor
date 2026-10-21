@@ -125,7 +125,40 @@ export function selectTailoringBullets(resume, analysis) {
 // Conservative first-pass vocabulary guard. The API separately reviews natural
 // paraphrases this guard cannot verify. Neither step proves real-world claims.
 const connective = new Set('a an the and or of to for in on at by with using through that which as into across within while'.split(' '));
-const verbs = { built: 'build', developed: 'build', created: 'build', delivered: 'build', developing: 'build', building: 'build', creating: 'build', build: 'build', used: 'use', utilized: 'use', using: 'use', use: 'use', implemented: 'implement', implementing: 'implement', optimized: 'optimize', optimizing: 'optimize', integrated: 'integrate', integrating: 'integrate', maintained: 'maintain', maintaining: 'maintain', collaborated: 'collaborate', collaborating: 'collaborate', designed: 'design', designing: 'design', wrote: 'write', written: 'write', authored: 'write', writing: 'write', handled: 'handle', handling: 'handle', rendered: 'render', rendering: 'render', documented: 'document', documenting: 'document' };
+const verbs = { made: 'build', built: 'build', developed: 'build', created: 'build', delivered: 'build', developing: 'build', building: 'build', creating: 'build', build: 'build', used: 'use', utilized: 'use', using: 'use', implemented: 'implement', implementing: 'implement', optimized: 'optimize', optimizing: 'optimize', integrated: 'integrate', integrating: 'integrate', connected: 'integrate', connecting: 'integrate', maintained: 'maintain', maintaining: 'maintain', sustained: 'maintain', collaborating: 'collaborate', collaborated: 'collaborate', designed: 'design', designing: 'design', improved: 'improve', strengthened: 'improve', wrote: 'write', written: 'write', authored: 'write', writing: 'write', fix: 'resolve', fixed: 'resolve', resolved: 'resolve', resolving: 'resolve', handled: 'handle', handling: 'handle', rendered: 'render', rendering: 'render', documented: 'document', documenting: 'document' };
+
+// Formatting, punctuation and JD-preferred spelling do not constitute a
+// rephrase. Use the same test in generation and the visible progress report.
+export function sameResumeWording(left, right) {
+  const normalized = value => normalizeAliases(value).replace(/[^a-z0-9+#%]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return normalized(left) === normalized(right);
+}
+
+// A long experience bullet is not rephrased merely because its opening verb
+// changed. Short bullets have too little structure to reorder safely.
+export function isMeaningfulBulletRewrite(original, proposed) {
+  if (sameResumeWording(original, proposed)) return false;
+  const words = value => normalizeAliases(value).match(/[a-z0-9+#%]+/g) || [];
+  const source = words(original);
+  if (source.length <= 5) return true;
+  const result = words(proposed);
+  if (sameResumeWording(source.slice(1).join(' '), result.slice(1).join(' '))) return false;
+  // A long bullet with the same ordered wording and one substituted adjective
+  // is still the source sentence, not a complete rephrase.
+  if (source.length >= 10 && result.length >= 10 && Math.abs(source.length - result.length) <= 2) {
+    const row = new Uint16Array(result.length + 1);
+    for (const word of source) {
+      let diagonal = 0;
+      for (let index = 1; index <= result.length; index += 1) {
+        const previous = row[index];
+        row[index] = word === result[index - 1] ? diagonal + 1 : Math.max(row[index], row[index - 1]);
+        diagonal = previous;
+      }
+    }
+    if (row[result.length] / Math.min(source.length, result.length) >= 0.85) return false;
+  }
+  return true;
+}
 
 // Equivalent JD spellings are safe to use only where the original bullet already
 // contains that concept. A skill listed elsewhere never establishes role evidence.
@@ -146,9 +179,9 @@ export function alignBulletKeywords(text, jd) {
   return result;
 }
 function contentWords(text) {
-  return new Set((normalizeAliases(text).match(/[a-z][a-z0-9.+#/-]*|\d+(?:\.\d+)?%?/g) || [])
+  return new Set((normalizeAliases(text).replace(/\bworked (?:closely )?with\b/g, 'collaboration with').replace(/\bfocused on\b/g, 'on').match(/[a-z][a-z0-9.+#/-]*|\d+(?:\.\d+)?%?/g) || [])
     .map(word => word.replace(/[.,/]+$/, ''))
-    .filter(word => !connective.has(word)).map(word => verbs[word] || ({ components: 'component', interfaces: 'interface', architectures: 'architecture', applications: 'application', patterns: 'pattern', screens: 'screen', tools: 'tool', workflows: 'workflow', designs: 'design' }[word]) || word));
+    .filter(word => !connective.has(word)).map(word => verbs[word] || ({ collaboration: 'collaborate', experienced: 'experience', partnered: 'collaborate', partnering: 'collaborate', translated: 'translate', converted: 'translate', conducted: 'conduct', performed: 'conduct', led: 'lead', directed: 'lead', owned: 'lead', applied: 'use', defined: 'define', outlined: 'define', crafted: 'design', produced: 'build', recorded: 'document', app: 'application', apps: 'application', components: 'component', interfaces: 'interface', architectures: 'architecture', applications: 'application', patterns: 'pattern', screens: 'screen', tools: 'tool', workflows: 'workflow', designs: 'design', note: 'document', notes: 'document', documentation: 'document' }[word]) || word));
 }
 export function metricClaims(text, allowedTerms = []) {
   const removeAllowed = text => {
@@ -173,6 +206,36 @@ export function hasUnsupportedNamedClaims(original, proposed, allowedTerms = [])
   if (namedKeywordTerms(proposed).some(term => containsTerm(candidate, normalizeAliases(term)) && !containsTerm(source, normalizeAliases(term)))) return true;
   const ownership = /\b(?:led|lead|leading|leadership|spearheaded|owned|architected|managed (?:a |the )?team)\b/i;
   return ownership.test(proposed) && !ownership.test(original);
+}
+
+// A semantic reviewer may approve different prose, but it cannot waive named
+// tools and technologies explicitly present in the source bullet.
+const protectedToolTerms = new Set(['react native', 'react.js', 'javascript', 'typescript', 'html', 'css', 'redux toolkit', 'redux saga', 'redux', 'rest apis', 'graphql', 'node.js', 'express', 'next.js', 'vue', 'angular', 'svelte', 'python', 'java', 'sql', 'postgresql', 'mysql', 'mongodb', 'redis', 'docker', 'kubernetes', 'aws', 'azure', 'gcp', 'git', 'github', 'ci/cd', 'eslint', 'sonarqube', 'storybook', 'playwright', 'cypress', 'react testing library', 'jest', 'vitest', 'vite', 'nginx', 'websocket', 'webrtc', 'canvas', 'webgl', 'wcag', 'figma', 'adobe xd']);
+export function preservesProtectedFacts(original, proposed) {
+  if (!preservesMetrics(original, proposed)) return false;
+  const source = namedKeywordTerms(original).filter(term => protectedToolTerms.has(term.toLowerCase()));
+  if (!source.every(term => containsTerm(normalizeAliases(proposed), normalizeAliases(term)))) return false;
+  // Keep distinct UX research work explicit; "discovery research" is not a
+  // faithful substitute for both discovery and research with users.
+  if (/\buser research\b/i.test(original) && !/\b(?:user research|research (?:with|among|of) users)\b/i.test(proposed)) return false;
+  if (/\bend[- ]to[- ]end\b/i.test(original) && !/\b(?:end[- ]to[- ]end|full[- ]cycle|complete lifecycle)\b/i.test(proposed)) return false;
+  return true;
+}
+
+// Outcome and scale language can sound like harmless resume polish while
+// creating a new achievement. Require the same claim family to be present in
+// the cited source instead of allowing a reviewer to infer the benefit.
+const outcomeClaimPatterns = [
+  /\b(?:improv|enhanc)\w*\b/i, /\boptimiz\w*\b/i, /\bstreamlin\w*\b/i,
+  /\baccelerat\w*\b/i, /\bboost\w*\b/i, /\bincreas\w*\b/i, /\breduc\w*\b/i,
+  /\bensur\w*\b/i, /\benabl\w*\b/i, /\befficien\w*\b/i, /\breliab\w*\b/i,
+  /\bconsisten\w*\b/i, /\bscalab\w*\b/i, /\bmaintainab\w*\b/i, /\bperformance\b/i,
+  /\bproductiv\w*\b/i, /\bengagement\b/i, /\bsatisfaction\b/i, /\bconversion\b/i,
+  /\brevenue\b/i, /\bcost(?:s| saving\w*)?\b/i, /\buser[ -]?friendly\b/i, /\bseamless\b/i,
+  /\brobust\b/i, /\bfaster\b/i, /\baccuracy\b/i,
+];
+export function hasUnsupportedOutcomeClaims(original, proposed) {
+  return outcomeClaimPatterns.some(pattern => pattern.test(proposed) && !pattern.test(original));
 }
 
 // A summary can omit less relevant detail, but every remaining claim must come

@@ -625,6 +625,11 @@
 }
 .reviewColumn .roleCard, .reviewColumn .insightPanel, .reviewColumn .insights > div,
 .reviewColumn .editorDetails, .reviewColumn .versions { box-shadow: 0 8px 24px rgba(68,81,107, .06); }
+.tailoredEditor { overflow: hidden; border: 1px solid #dce5f2; border-radius: 14px; background: #fff; box-shadow: 0 8px 24px rgba(68,81,107, .06); }
+.tailoredEditor > header { display: grid; gap: 5px; padding: 15px 16px; border-bottom: 1px solid #eef3fc; background: #f8faff; }
+.tailoredEditor > header h3 { margin: 2px 0 0; color: #17213b; font-size: 16px; }
+.tailoredEditor > header small { color: #64748b; font-size: 10px; line-height: 1.45; }
+.tailoredEditor > div { padding: 12px; }
 .copilotLabel { display: block; margin-bottom: 3px; color: #2563eb; font-size: 9px; font-weight: 850; letter-spacing: 1.15px; }
 .roleCard { grid-template-columns: auto minmax(0, 1fr) auto; padding: 14px; }
 .roleIcon { width: 38px; height: 38px; border-radius: 11px; font-size: 18px; }
@@ -768,6 +773,27 @@
 }
 .aiPreviewOverlay .aiLoading { width: 100%; min-height: 420px; }
 .previewProcessing { min-height: 720px; opacity: .34; filter: saturate(.5) blur(1.5px); transform: scale(.985); transform-origin: top center; transition: opacity .2s ease, filter .2s ease; }
+.optionalAtsButton { width: 100%; margin-top: 8px; }
+.keywordSelector { margin-top: 14px; padding: 13px; border: 1px solid #dce5f2; border-radius: 10px; background: #f8faff; }
+.keywordSelector > strong { color: #17213b; font-size: 13px; }
+.keywordSelector > p, .keywordSelector > small { display: block; margin: 5px 0 9px; color: #64748b; font-size: 11px; line-height: 1.4; }
+.keywordSelector > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.keywordSelector label { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 16px; background: #fff; color: #334155; cursor: pointer; font-size: 11px; }
+.keywordSelector label:has(input:checked) { border-color: #6366f1; background: #eef2ff; color: #3730a3; }
+.keywordSelector input { accent-color: #4f46e5; }
+.tailoringProgress { padding: 16px 18px; border: 1px solid #dce5f2; border-radius: 12px; background: #fff; box-shadow: 0 2px 8px rgba(23,33,59,.035); }
+.tailoringProgressHeader { display: grid; gap: 3px; margin-bottom: 12px; }
+.tailoringProgressHeader strong { color: #17213b; font-size: 15px; }
+.tailoringProgress ol { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.tailoringProgress li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; padding: 10px; border: 1px solid #e6ebf5; border-radius: 9px; }
+.processNumber { display: grid; width: 25px; height: 25px; place-items: center; border-radius: 50%; background: #edf1f8; color: #64748b; font-size: 12px; font-weight: 750; }
+.tailoringProgress li div { display: grid; gap: 3px; }
+.tailoringProgress li strong { color: #25324c; font-size: 12px; }
+.tailoringProgress li small { color: #64748b; font-size: 11px; line-height: 1.4; }
+.tailoringProgress .processActive { border-color: #c7bff7; background: #f7f5ff; }
+.tailoringProgress .processActive .processNumber { background: #5c45be; color: #fff; animation: pulse 1s ease-in-out infinite alternate; }
+.tailoringProgress .processDone .processNumber { background: #e5f5ec; color: #24744d; }
+.tailoringProgress > p { margin: 11px 0 0; color: #5b4aa3; font-size: 11px; line-height: 1.4; }
 @keyframes aiOrbit { to { transform: rotate(360deg); } }
 @keyframes aiAura { 0%, 100% { opacity: .65; transform: scale(.92); } 50% { opacity: 1; transform: scale(1.08); } }
 @keyframes aiCorePulse { 0%, 100% { transform: scale(.94) rotate(-2deg); } 50% { transform: scale(1.04) rotate(2deg); } }
@@ -817,3 +843,4 @@
 .reviewGrid > .reviewColumn { grid-column: 2; grid-row: 1; }
 @media (max-width: 1180px) { .reviewGrid { grid-template-columns: minmax(420px, 1.1fr) minmax(320px, .9fr); gap: 18px; } }
 @media (max-width: 950px) { .reviewGrid { grid-template-columns: 1fr; } .reviewGrid > .reviewColumn,.reviewGrid > .previewPane { grid-column: 1; grid-row: auto; } }
+@media (max-width: 620px) { .reviewGrid .previewPane > article { width: 100%; max-width: 100%; zoom: 1; padding: 18px; } }

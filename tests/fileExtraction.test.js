@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { jsPDF } from 'jspdf';
 import JSZip from 'jszip';
-import { cleanOcrText, extractResumeText, pdfPageNeedsOcr, pdfItemsToText } from '../src/services/fileExtraction';
+import { cleanOcrText, extractResumeText, mergePdfTextLayers, pdfPageNeedsOcr, pdfItemsToText } from '../src/services/fileExtraction';
 
 vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({
   default: `file:///${process.cwd().replace(/\\/g, '/')}/node_modules/pdfjs-dist/build/pdf.worker.min.mjs`,
@@ -39,7 +39,52 @@ describe('browser document extraction', () => {
   });
 
   it('normalizes common resume OCR ambiguities', () => {
-    expect(cleanOcrText('Ul/UX Designer\nSaas products\nReact.Js')).toBe('UI/UX Designer\nSaaS products\nReact.js');
+    expect(cleanOcrText('Ul/UX Designer\nSaas products\nReact.Js\npixel- perfect')).toBe('UI/UX Designer\nSaaS products\nReact.js\npixel-perfect');
+  });
+
+  it('keeps selectable experience bullets when OCR reads more of a short PDF page', () => {
+    const merged = mergePdfTextLayers(
+      'EXPERIENCE\nDesigned Figma prototypes and user flows for SaaS products.\nCollaborated with engineers on design reviews.',
+      'EXPERIENCE\nDesigned Figma prototypes\nConducted usability tests with customers.',
+    );
+    expect(merged).toContain('Designed Figma prototypes and user flows for SaaS products.');
+    expect(merged).toContain('Conducted usability tests with customers.');
+    expect(merged).toContain('Collaborated with engineers on design reviews.');
+    expect(merged.match(/Designed Figma prototypes/g)).toHaveLength(1);
+  });
+
+  it('does not append duplicate contact lines or sparse date fragments after OCR', () => {
+    const merged = mergePdfTextLayers(
+      'Kerala, India +91 8089911973 mail4ashh@gmail.com\nDec Sep\nBachelor of Arts Distance Education pected July',
+      'Kerala, India | +918089911973 | mail4ashh@gmail.com\nBachelor of Arts Distance Education Expected July 2026',
+    );
+    expect(merged.split('\n')).toHaveLength(2);
+    expect(merged).not.toContain('Dec Sep');
+  });
+
+  it('does not overwrite an OCR section heading with a longer text-layer line containing that word', () => {
+    const merged = mergePdfTextLayers(
+      'Bachelor of Arts - Distance Education, expected July 2026',
+      'EDUCATION\nBachelor of Arts - Distance Education, expected July 2026',
+    );
+    expect(merged.split('\n')[0]).toBe('EDUCATION');
+  });
+
+  it('avoids appending duplicate OCR-corrupted education lines', () => {
+    const merged = mergePdfTextLayers(
+      'Final ear Student\nImage Creative ducation, erala',
+      'EDUCATION\nFinal Year Student\nImage Creative Education, Kerala',
+    );
+    expect(merged.split('\n')).toEqual(['EDUCATION', 'Final Year Student', 'Image Creative Education, Kerala']);
+  });
+
+  it('keeps an OCR-only bullet when a long text layer is otherwise complete', () => {
+    const merged = mergePdfTextLayers(
+      'Created accessible mobile and web interfaces.',
+      'Asha Rao\nExperience\nBuilt product design systems.',
+    );
+    expect(merged).toContain('Built product design systems.');
+    expect(merged).toContain('Created accessible mobile and web interfaces.');
   });
 
   it('extracts paragraphs from a DOCX', async () => {

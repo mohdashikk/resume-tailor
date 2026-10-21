@@ -39,6 +39,19 @@ describe('Groq AI adapter', () => {
     expect(JSON.parse(fetchMock.mock.calls[3][1].body).model).toBe('openai/gpt-oss-20b');
   });
 
+  it('tries the fallback model when the configured model has a provider failure', async () => {
+    const success = { ok: true, status: 200, json: async () => ({ choices: [{ message: { content: JSON.stringify(parsedResume) } }] }) };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({ ok: false, status: 502, json: async () => ({ error: { message: 'Model temporarily unavailable' } }) })
+      .mockResolvedValueOnce(success);
+    const result = await handleAIRequest(
+      { action: 'parse', payload: { rawText: 'Asha Rao\nProduct Designer\n'.padEnd(80, 'x') } },
+      { GROQ_API_KEY: 'provider-fallback-key', GROQ_MODEL: 'configured-model', GROQ_FALLBACK_MODEL: 'fallback-model' },
+    );
+    expect(result.status).toBe(200);
+    expect(fetchMock.mock.calls.map(([, request]) => JSON.parse(request.body).model)).toEqual(['configured-model', 'fallback-model']);
+  });
+
   it('returns the shortest cooldown when both models are limited and avoids more calls during cooldown', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce({ ok: false, status: 429, headers: { get: () => '60' }, json: async () => ({}) })
@@ -76,6 +89,29 @@ describe('Groq AI adapter', () => {
     expect(body.model).toBe('openai/gpt-oss-20b');
     expect(body.reasoning_effort).toBe('low');
     expect(body.response_format.json_schema.strict).toBe(true);
+  });
+
+  it('returns all source experience bullets when the AI omits one', async () => {
+    const rawText = `Asha Rao
+Product Designer
+Experience
+Product Designer | Orbit Labs | Jul 2023 - Present
+• Designed accessible customer dashboards in Figma.
+• Conducted usability tests and applied customer feedback.
+• Collaborated with developers on reusable interface components.`;
+    const incomplete = { ...parsedResume, experience: [{
+      id: 'role-1', masterId: 'role-1', role: 'Product Designer', company: 'Orbit Labs',
+      location: '', startDate: 'Jul 2023', endDate: 'Present',
+      bullets: [{ id: 'bullet-1', text: 'Designed accessible customer dashboards in Figma.' }],
+    }] };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(incomplete) } }] }) });
+    const result = await handleAIRequest({ action: 'parse', payload: { rawText } }, { GROQ_API_KEY: 'source-bullet-recovery-test' });
+    expect(result.status).toBe(200);
+    expect(result.body.data.experience[0].bullets.map((bullet) => bullet.text)).toEqual([
+      'Designed accessible customer dashboards in Figma.',
+      'Conducted usability tests and applied customer feedback.',
+      'Collaborated with developers on reusable interface components.',
+    ]);
   });
 
   it('waits for Groq rate limits and retries once', async () => {
@@ -125,7 +161,7 @@ describe('Groq AI adapter', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const retryBody = JSON.parse(fetchMock.mock.calls[1][1].body);
     expect(retryBody.temperature).toBe(0);
-    expect(retryBody.messages.at(-1).content).toContain('Every element in');
+    expect(retryBody.messages.at(-1).content).toContain('include every required property');
   });
 
   it('uses only master skills and orders them for the JD', async () => {
@@ -170,6 +206,18 @@ describe('Groq AI adapter', () => {
     expect(result.status).toBe(422);
     expect(result.body.data).toBeUndefined();
     expect(result.body.error).toContain('retry');
+  });
+
+  it('repairs a schema-valid ATS extraction that omitted a named JD technology', async () => {
+    const jobDescription = 'Seeking a product designer with React and TypeScript experience to create accessible digital interfaces with the product team.';
+    const row = term => ({ term, priority: 'required', source: jobDescription, status: 'missing', evidence: [] });
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ requirements: [row('React')] }) } }] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ requirements: [row('React'), row('TypeScript')] }) } }] }) });
+    const result = await handleAIRequest({ action: 'ats', payload: { resume: parsedResume, jobDescription } }, { GROQ_API_KEY: 'ats-semantic-repair-test' });
+    expect(result.status).toBe(200);
+    expect(result.body.data.requirements.map(item => item.term)).toEqual(['react', 'typescript']);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('keeps summary and skips the provider when there are no relevant source bullets', async () => {

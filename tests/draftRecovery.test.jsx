@@ -48,3 +48,15 @@ it('opens saved versions after refresh without ATS and shows actual skill reorde
     expect(fetch).not.toHaveBeenCalled();
   } finally { await act(async () => root.unmount()); container.remove(); }
 });
+it('opens the saved tailored resume instead of the unchanged base editor after refresh', async () => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  const { store } = makeStore(storageFor({ masterResume: source, current: draft, versions: [draft] }));
+  const container = document.createElement('div'); document.body.append(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<Provider store={store}><App /></Provider>));
+    expect(container.querySelector('[aria-label="Tailored resume preview"]')).toBeTruthy();
+    expect(container.querySelector('[aria-label="Base preview"]')).toBeNull();
+    expect(container.textContent).toContain('Review and edit every section');
+  } finally { await act(async () => root.unmount()); container.remove(); }
+});
